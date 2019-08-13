@@ -116,6 +116,11 @@ def fastq_iter(file, sequence_class, buffersize, **kwargs):
     cdef bint yielded_second_header = False
     cdef bint custom_class = sequence_class is not Sequence
     cdef bytes line
+    cdef bytes header
+    cdef bytes plus_line
+    cdef str name
+    cdef str sequence
+    cdef str qualities
 
     if buffersize < 1:
         raise ValueError("Starting buffer size too small")
