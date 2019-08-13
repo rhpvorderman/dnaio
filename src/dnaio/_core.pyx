@@ -138,18 +138,17 @@ def fastq_iter(file, sequence_class, buffersize, **kwargs):
         elif i == 2:
             sequence = line.rstrip().decode('latin-1')
         elif i == 3:
-            plus_line = line.rstrip()
-            if not plus_line.startswith(b'+'):
+            if not line.startswith(b'+'):
                 raise FastqFormatError("Line expected to "
                                  "start with '+', but found {!r}".format(
-                    chr(plus_line[0])),
+                    chr(line[0])),
                                  line=n_records * 4 + 2)
             if not yielded_second_header:
-                second_header = len(plus_line[1:]) > 0
+                second_header = len(line) > 2  # > b'+\n'
                 yield second_header
                 yielded_second_header = True
             if second_header:
-
+                plus_line = line.rstrip()
                 if header[1:] != plus_line[1:]:
                     plus_name = plus_line[1:].decode('latin-1')
                     raise FastqFormatError(
