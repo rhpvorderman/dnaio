@@ -109,8 +109,68 @@ def paired_fastq_heads(bytes_or_bytearray buf1, bytes_or_bytearray buf2, Py_ssiz
     # Hit the end of the data block
     return record_start1, record_start2
 
+def fastq_iter(file, sequence_class, buffersize, **kwargs):
+    cdef n_records = 0
+    cdef int i = 0
+    cdef bint second_header = False
+    cdef bint yielded_second_header = False
+    cdef bint custom_class = sequence_class is not Sequence
+    cdef bytes line
 
-def fastq_iter(file, sequence_class, Py_ssize_t buffer_size):
+    if buffersize < 1:
+        raise ValueError("Starting buffer size too small")
+
+    for line in file:
+        i += 1
+        if i == 1:
+            header = line.rstrip()
+            if not header.startswith(b'@'):
+                raise FastqFormatError("Line expected to "
+                                      "start with '@', but found {!r}".format(
+                    chr(header[0])),
+                                      line=n_records * 4)
+            name = header[1:].decode('latin-1')
+        elif i == 2:
+            sequence = line.rstrip().decode('latin-1')
+        elif i == 3:
+            plus_line = line.rstrip()
+            if not plus_line.startswith(b'+'):
+                raise FastqFormatError("Line expected to "
+                                 "start with '+', but found {!r}".format(
+                    chr(plus_line[0])),
+                                 line=n_records * 4 + 2)
+            if not yielded_second_header:
+                second_header = len(plus_line[1:]) > 0
+                yield second_header
+                yielded_second_header = True
+            if second_header:
+
+                if header[1:] != plus_line[1:]:
+                    plus_name = plus_line[1:].decode('latin-1')
+                    raise FastqFormatError(
+                        "Sequence descriptions don't match ('{}' != '{}').\n"
+                        "The second sequence description must be either "
+                        "empty or equal to the first description.".format(
+                            name, plus_name), line=n_records * 4 + 2)
+        elif i==4:
+            qualities = line.rstrip().decode('latin-1')
+            if len(sequence) != len(qualities):
+                raise FastqFormatError("Length of sequence and "
+                                       "qualities differ",
+                                       line=n_records * 4 + 3)
+            if custom_class:
+                yield sequence_class(name, sequence, qualities)
+            else:
+                yield Sequence.__new__(Sequence, name, sequence, qualities)
+            n_records += 1
+            i = 0
+    # At end of loop i should be 0.
+    if i != 0:
+        raise FastqFormatError(
+            'Premature end of file encountered.', line=n_records * 4 + (i if line.endswith(b'\n') else i - 1))
+
+
+def orig_fastq_iter(file, sequence_class, Py_ssize_t buffer_size):
     """
     Parse a FASTQ file and yield Sequence objects
 
