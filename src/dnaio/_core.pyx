@@ -199,6 +199,13 @@ cdef class FastqIter:
             # using 64-bit integers. See:
             # https://sourceware.org/git/?p=glibc.git;a=blob_plain;f=string/memchr.c;hb=HEAD
             # void *memchr(const void *str, int c, size_t n)
+            if self.record_start == self.bufend:
+                self._read_into_buffer()
+                continue
+            if self.c_buf[self.record_start] != b'@':
+                raise FastqFormatError("Line expected to "
+                    "start with '@', but found {!r}".format(chr(self.c_buf[self.record_start])),
+                    line=self.number_of_records * 4)
             name_end_ptr = <char *>memchr(self.c_buf + self.record_start, b'\n', <size_t>(self.bufend - self.record_start))
             if name_end_ptr == NULL:
                 self._read_into_buffer()
@@ -206,52 +213,39 @@ cdef class FastqIter:
             # bufend - sequence_start is always nonnegative:
             # - name_end is at most bufend - 1
             # - thus sequence_start is at most bufend
+            name_start = self.record_start + 1  # Skip @
             name_end = name_end_ptr - self.c_buf
+            name_length = name_end - name_start
+            if self.c_buf[name_end - 1] == b'\r':
+                name_length -= 1
+
             sequence_start = name_end + 1
             sequence_end_ptr = <char *>memchr(self.c_buf + sequence_start, b'\n', <size_t>(self.bufend - sequence_start))
             if sequence_end_ptr == NULL:
                 self._read_into_buffer()
                 continue
             sequence_end = sequence_end_ptr - self.c_buf
-            second_header_start = sequence_end + 1
-            second_header_end_ptr = <char *>memchr(self.c_buf + second_header_start, b'\n', <size_t>(self.bufend - second_header_start))
-            if second_header_end_ptr == NULL:
-                self._read_into_buffer()
-                continue
-            second_header_end = second_header_end_ptr - self.c_buf
-            qualities_start = second_header_end + 1
-            qualities_end_ptr = <char *>memchr(self.c_buf + qualities_start, b'\n', <size_t>(self.bufend - qualities_start))
-            if qualities_end_ptr == NULL:
-                self._read_into_buffer()
-                continue
-            qualities_end = qualities_end_ptr - self.c_buf
+            sequence_length = sequence_end - sequence_start
+            if self.c_buf[sequence_end - 1] == b'\r':
+                sequence_length -= 1
 
-            if self.c_buf[self.record_start] != b'@':
-                raise FastqFormatError("Line expected to "
-                    "start with '@', but found {!r}".format(chr(self.c_buf[self.record_start])),
-                    line=self.number_of_records * 4)
+            second_header_start = sequence_end + 1
+            if second_header_start == self.bufend:
+                self._read_into_buffer()
+                continue
             if self.c_buf[second_header_start] != b'+':
                 raise FastqFormatError("Line expected to "
                     "start with '+', but found {!r}".format(chr(self.c_buf[second_header_start])),
                     line=self.number_of_records * 4 + 2)
-
-            name_start = self.record_start + 1  # Skip @
+            second_header_end_ptr = <char *>memchr(self.c_buf + second_header_start, b'\n', <size_t>(self.bufend - second_header_start))
+            if second_header_end_ptr == NULL:
+                self._read_into_buffer()
+                continue
             second_header_start += 1  # Skip +
-            name_length = name_end - name_start
-            sequence_length = sequence_end - sequence_start
+            second_header_end = second_header_end_ptr - self.c_buf
             second_header_length = second_header_end - second_header_start
-            qualities_length = qualities_end - qualities_start
-
-            # Check for \r\n line-endings and compensate
-            if self.c_buf[name_end - 1] == b'\r':
-                name_length -= 1
-            if self.c_buf[sequence_end - 1] == b'\r':
-                sequence_length -= 1
             if self.c_buf[second_header_end - 1] == b'\r':
                 second_header_length -= 1
-            if self.c_buf[qualities_end - 1] == b'\r':
-                qualities_length -= 1
-
             if second_header_length:  # should be 0 when only + is present
                 if (name_length != second_header_length or
                         strncmp(self.c_buf+second_header_start,
@@ -263,6 +257,16 @@ cdef class FastqIter:
                             self.c_buf[name_start:name_end].decode('latin-1'),
                             self.c_buf[second_header_start:second_header_end]
                             .decode('latin-1')), line=self.number_of_records * 4 + 2)
+
+            qualities_start = second_header_end + 1
+            qualities_end_ptr = <char *>memchr(self.c_buf + qualities_start, b'\n', <size_t>(self.bufend - qualities_start))
+            if qualities_end_ptr == NULL:
+                self._read_into_buffer()
+                continue
+            qualities_end = qualities_end_ptr - self.c_buf
+            qualities_length = qualities_end - qualities_start
+            if self.c_buf[qualities_end - 1] == b'\r':
+                qualities_length -= 1
 
             if qualities_length != sequence_length:
                 raise FastqFormatError(
