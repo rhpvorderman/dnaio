@@ -69,14 +69,17 @@ def paired_fastq_heads(bytes_or_bytearray buf1, bytes_or_bytearray buf2, Py_ssiz
     return record_start1, record_start2
 
 
-cdef class fastq_iter:
+cdef class FastqIter:
     """
     Parse a FASTQ file and yield Sequence objects
+
     The *first value* that the generator yields is a boolean indicating whether
     the first record in the FASTQ has a repeated header (in the third row
     after the ``+``).
+
     file -- a file-like object, opened in binary mode (it must have a readinto
     method)
+
     buffer_size -- size of the initial buffer. This is automatically grown
         if a FASTQ record is encountered that does not fit.
     """
@@ -87,14 +90,14 @@ cdef class fastq_iter:
         char *c_buf
         type sequence_class
         bint save_as_bytes
-        bint custom_class
+        bint use_custom_class
         bint extra_newline
         bint yielded_two_headers
         bint eof
         object file
         Py_ssize_t bufend
         Py_ssize_t record_start
-    cdef readonly Py_ssize_t n_records
+    cdef readonly Py_ssize_t number_of_records
 
     def __cinit__(self, file, sequence_class, Py_ssize_t buffer_size):
         self.buffer_size = buffer_size
@@ -103,9 +106,9 @@ cdef class fastq_iter:
         self.c_buf = self.buf
         self.sequence_class = sequence_class
         self.save_as_bytes = sequence_class is BytesSequence
-        self.custom_class = (sequence_class is not Sequence and
-                             sequence_class is not BytesSequence)
-        self.n_records = 0
+        self.use_custom_class = (sequence_class is not Sequence and
+                                 sequence_class is not BytesSequence)
+        self.number_of_records = 0
         self.extra_newline = False
         self.yielded_two_headers = False
         self.eof = False
@@ -115,7 +118,7 @@ cdef class fastq_iter:
         if buffer_size < 1:
             raise ValueError("Starting buffer size too small")
 
-    cdef _update_buffer(self):
+    cdef _read_into_buffer(self):
         # self.buf is a byte buffer that is re-used in each iteration. Its layout is:
         #
         # |-- complete records --|
@@ -167,7 +170,7 @@ cdef class fastq_iter:
                     '{!r}'.format(
                         shorten(self.buf[self.record_start:last_read_position].decode('latin-1'),
                                 500)),
-                    line=self.n_records * 4 + lines)
+                    line=self.number_of_records * 4 + lines)
             else:  # EOF Reached. Stop iterating.
                 self.eof = True
         self.record_start = 0
@@ -186,6 +189,8 @@ cdef class fastq_iter:
             char *sequence_end_ptr
             char *second_header_end_ptr
             char *qualities_end_ptr
+        # Repeatedly attempt to parse the buffer until we have found a full record.
+        # If an attempt fails, we read more data before retrying.
         while True:
             if self.eof:
                 raise StopIteration()
@@ -196,7 +201,7 @@ cdef class fastq_iter:
             # void *memchr(const void *str, int c, size_t n)
             name_end_ptr = <char *>memchr(self.c_buf + self.record_start, b'\n', <size_t>(self.bufend - self.record_start))
             if name_end_ptr == NULL:
-                self._update_buffer()
+                self._read_into_buffer()
                 continue
             # bufend - sequence_start is always nonnegative:
             # - name_end is at most bufend - 1
@@ -205,30 +210,30 @@ cdef class fastq_iter:
             sequence_start = name_end + 1
             sequence_end_ptr = <char *>memchr(self.c_buf + sequence_start, b'\n', <size_t>(self.bufend - sequence_start))
             if sequence_end_ptr == NULL:
-                self._update_buffer()
+                self._read_into_buffer()
                 continue
             sequence_end = sequence_end_ptr - self.c_buf
             second_header_start = sequence_end + 1
             second_header_end_ptr = <char *>memchr(self.c_buf + second_header_start, b'\n', <size_t>(self.bufend - second_header_start))
             if second_header_end_ptr == NULL:
-                self._update_buffer()
+                self._read_into_buffer()
                 continue
             second_header_end = second_header_end_ptr - self.c_buf
             qualities_start = second_header_end + 1
             qualities_end_ptr = <char *>memchr(self.c_buf + qualities_start, b'\n', <size_t>(self.bufend - qualities_start))
             if qualities_end_ptr == NULL:
-                self._update_buffer()
+                self._read_into_buffer()
                 continue
             qualities_end = qualities_end_ptr - self.c_buf
 
             if self.c_buf[self.record_start] != b'@':
                 raise FastqFormatError("Line expected to "
                     "start with '@', but found {!r}".format(chr(self.c_buf[self.record_start])),
-                    line=self.n_records * 4)
+                    line=self.number_of_records * 4)
             if self.c_buf[second_header_start] != b'+':
                 raise FastqFormatError("Line expected to "
                     "start with '+', but found {!r}".format(chr(self.c_buf[second_header_start])),
-                    line=self.n_records * 4 + 2)
+                    line=self.number_of_records * 4 + 2)
 
             name_start = self.record_start + 1  # Skip @
             second_header_start += 1  # Skip +
@@ -257,13 +262,13 @@ cdef class fastq_iter:
                         "empty or equal to the first description.".format(
                             self.c_buf[name_start:name_end].decode('latin-1'),
                             self.c_buf[second_header_start:second_header_end]
-                            .decode('latin-1')), line=self.n_records * 4 + 2)
+                            .decode('latin-1')), line=self.number_of_records * 4 + 2)
 
             if qualities_length != sequence_length:
                 raise FastqFormatError(
-                    "Length of sequence and qualities differ", line=self.n_records * 4 + 3)
+                    "Length of sequence and qualities differ", line=self.number_of_records * 4 + 3)
 
-            if self.n_records == 0 and not self.yielded_two_headers:
+            if self.number_of_records == 0 and not self.yielded_two_headers:
                 self.yielded_two_headers = True
                 return bool(second_header_length)  # first yielded value is special
 
@@ -283,14 +288,14 @@ cdef class fastq_iter:
                 memcpy(PyUnicode_1BYTE_DATA(sequence), self.c_buf + sequence_start, sequence_length)
                 memcpy(PyUnicode_1BYTE_DATA(qualities), self.c_buf + qualities_start, qualities_length)
                 
-            if self.custom_class:
+            if self.use_custom_class:
                 ret_val = self.sequence_class(name, sequence, qualities)
             else:
                 Py_INCREF(name); Py_INCREF(sequence); Py_INCREF(qualities)
                 ret_val = new_sequence_record(self.sequence_class, name, sequence, qualities)
 
             ### Advance record to next position
-            self.n_records += 1
+            self.number_of_records += 1
             self.record_start = qualities_end + 1
             return ret_val
 

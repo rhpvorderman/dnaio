@@ -8,7 +8,7 @@ from typing import Union, BinaryIO, Optional, Iterator, List
 
 from xopen import xopen
 
-from ._core import fastq_iter as _fastq_iter, Sequence
+from ._core import FastqIter, Sequence
 from ._util import shorten as _shorten
 from .exceptions import FastaFormatError
 from .interfaces import SingleEndReader
@@ -79,7 +79,7 @@ class FastaReader(BinaryFileReader, SingleEndReader):
         self.sequence_class = sequence_class
         self.delivers_qualities = False
         self._delimiter = '\n' if keep_linebreaks else ''
-        self.n_records = 0
+        self.number_of_records = 0
 
     def __iter__(self) -> Iterator[Sequence]:
         """
@@ -97,7 +97,7 @@ class FastaReader(BinaryFileReader, SingleEndReader):
                 continue
             if line and line[0] == '>':
                 if name is not None:
-                    self.n_records += 1
+                    self.number_of_records += 1
                     yield self.sequence_class(name, self._delimiter.join(seq), None)
                 name = line[1:]
                 seq = []
@@ -110,7 +110,7 @@ class FastaReader(BinaryFileReader, SingleEndReader):
                     f"Expected '>' at beginning of record, but got '{_shorten(line)}'.", line=i)
 
         if name is not None:
-            self.n_records += 1
+            self.number_of_records += 1
             yield self.sequence_class(name, self._delimiter.join(seq), None)
         # Prevent TextIOWrapper from closing the underlying file
         f.detach()
@@ -138,9 +138,9 @@ class FastqReader(BinaryFileReader, SingleEndReader):
         self.sequence_class = sequence_class
         self.delivers_qualities = True
         self.buffer_size = buffer_size
-        # The first value yielded by _fastq_iter indicates
+        # The first value yielded by FastqIter indicates
         # whether the file has repeated headers
-        self._iter: Iterator[Sequence] = _fastq_iter(self._file, self.sequence_class, self.buffer_size)
+        self._iter: Iterator[Sequence] = FastqIter(self._file, self.sequence_class, self.buffer_size)
         try:
             th = next(self._iter)
             assert isinstance(th, bool)
@@ -157,8 +157,8 @@ class FastqReader(BinaryFileReader, SingleEndReader):
         return self._iter
 
     @property
-    def n_records(self):
+    def number_of_records(self):
         try:
-            return self._iter.n_records
+            return self._iter.number_of_records
         except AttributeError:
             return 0
