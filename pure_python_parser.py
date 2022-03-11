@@ -14,8 +14,8 @@ class FastqRecord:
         self.sequence = sequence
         self.qualities = qualities
 
-    def fastq_bytes(self):
-        return f"@{self.name}\n{self.sequence}\n+\n{self.qualities}\n".encode("ascii")
+    def to_record_string(self):
+        return f"@{self.name}\n{self.sequence}\n+\n{self.qualities}\n"
 
 
 def fastq_iter(filename: str):
@@ -44,6 +44,19 @@ def fastq_iter(filename: str):
             yield FastqRecord(name, sequence, qualities)
 
 
-if __name__ == "__main__":
+def read():
     for record in fastq_iter(sys.argv[1]):
         pass
+
+
+def read_and_write():
+    with open(sys.argv[2], "wt", encoding="ascii") as writer:
+        # Given the amount of fastq records this has a notable impact.
+        write = writer.write
+        for record in fastq_iter(sys.argv[1]):
+            write(record.to_record_string())
+
+
+if __name__ == "__main__":
+    read_and_write()
+
