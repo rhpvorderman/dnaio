@@ -20,15 +20,18 @@ class FastqRecord:
 
 def fastq_iter(filename: str):
     with open(filename, "rt", encoding="ascii") as file:
+        # This saves one attribute lookup per line. Since FASTQ consists of
+        # four lines per record, this has a noticeable impact on performance.
+        readline = file.readline
         while True:
-            name = file.readline()
+            name = readline()
             if not name:
                 return
             if not name.startswith("@"):
                 raise ValueError("FASTQ record should start with @.")
-            sequence = file.readline()
-            second_header = file.readline()
-            qualities = file.readline()
+            sequence = readline()
+            second_header = readline()
+            qualities = readline()
             if not (sequence and second_header and qualities):
                 raise EOFError(f"Truncated FASTQ file at {name}")
             if not second_header.startswith("+"):
