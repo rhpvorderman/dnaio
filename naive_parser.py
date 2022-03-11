@@ -34,7 +34,8 @@ def fastq_iter(filename: str):
             if not second_header.startswith("+"):
                 raise ValueError("Second header should start with +.")
             name = name[1:-1]  # strip @ and \n
-            sequence = sequence.rstrip()  # Rstrip is faster than slicing.
+            # Rstrip is faster than slicing for removing the final newline.
+            sequence = sequence.rstrip()
             qualities = qualities.rstrip()
             # Length check in FastqRecord init.
             yield FastqRecord(name, sequence, qualities)
