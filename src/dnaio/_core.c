@@ -522,6 +522,8 @@ Fastqiter__new__(PyTypeObject *subtype, PyObject *args, PyObject *kwargs) {
     return (PyObject *)self;
 }
 
+static PyObject * FastqFormatError;
+
 static int 
 FastqIter__read_into_buffer(FastqIter *self) {
     // This function sets self.record_start at 0 and makes sure self.buffer
@@ -566,8 +568,76 @@ FastqIter__read_into_buffer(FastqIter *self) {
            PyBytes_AS_STRING(filechunk), filechunk_size);
   
     if (!string_is_ascii(self->buffer + self->bytes_in_buffer, filechunk_size)) {
-      
+        PyErr_SetString(FastqFormatError, 
+                        "Non-ASCII characters found in record.");
+        return -1;
     }
+    self->bytes_in_buffer += filechunk_size;
+
+    if (filechunk_size == 0) {  // End of file
+        if (self->bytes_in_buffer == 0) {
+            // All records are processed
+            self->eof = 1;
+        }
+        else if (!self->extra_newline && self->buffer[self->bytes_in_buffer -1] != '\n') {
+            // There is still data in the buffer and its last character is
+            // not a newline: This is a file that is missing the final 
+            // Newline. Append a newline and continue.
+            self->buffer[self->bytes_in_buffer] = '\n';
+            self->bytes_in_buffer += 1;
+            self->extra_newline = 1;
+        }
+        else { // Incomplete FASTQ records are present.
+            if (self->extra_newline) {
+                // Do not report the linefeed that was added by dnaio but
+                // was not present in the original input.
+                self->bytes_in_buffer -= 1;
+            }
+            PyErr_Format(FastqFormatError, 
+                "Premature end of file encountered. The incomplete final record was: %500S",
+                PyUnicode_DecodeASCII(self->record_start, self->bytes_in_buffer, NULL));
+                return -1;
+        }
+    }
+    return 0;
+}
+
+static PyObject * 
+FastqIter_iter(PyObject * self){
+    Py_INCREF(self);
+    return self;
+}
+
+static PyObject *
+FastqIter_next(FastqIter * self) {
+    while (1) {
+        if (self->eof) {
+            PyErr_SetNone(PyExc_StopIteration);
+        }
+        char * name_start = self->buffer + self->record_start;
+        char * name_end = memchr(
+            name_start, '\n',
+            (self->buffer - self->record_start));
+        if (name_end == NULL) {
+            if (FastqIter__read_into_buffer(self) != 0) {
+              return NULL;
+            }
+            continue;
+        }
+        
+        char * sequence_start = name_end + 1;
+        char * sequence_end = memchr(
+            self->buffer + self->record_start, '\n',
+            (self->bytes_in_buffer - self->record_start));
+        if (sequence_end == NULL) {
+            if (FastqIter__read_into_buffer(self) != 0) {
+              return NULL;
+            }
+            continue;
+        }
+
+    }
+}
 
 
 
