@@ -1,9 +1,7 @@
 #define PY_SSIZE_T_CLEAN
 #include <Python.h>
 #include "structmember.h"         // PyMemberDef
-
-#define PY_SSIZE_T_CLEAN
-#include <Python.h>
+#include "ascii_check.h"
 
 typedef struct {
     PyObject_HEAD
@@ -113,8 +111,9 @@ SequenceRecord__new__(PyTypeObject *tp, PyObject *args, PyObject *kwargs)
         args, kwargs, _format, _keywords,
         (PyObject *)&PyUnicode_Type, &name,
         (PyObject *)&PyUnicode_Type, &sequence,
-        &qualities))
+        &qualities)) {
         return NULL;
+    }
     if (qualities == Py_None) {
         qualities = NULL;
     }
@@ -459,4 +458,120 @@ PyInit__sequence(void)
         return NULL;
     }
     return m;
+}
+
+typedef struct {
+  PyObject_HEAD 
+  Py_ssize_t buffer_size;
+  char * buffer;
+  Py_ssize_t bytes_in_buffer;
+  PyObject * sequence_class;
+  int use_custom_class;
+  int extra_newline;
+  int yielded_two_headers;
+  int eof;
+  PyObject * file; 
+  Py_ssize_t record_start;
+  Py_ssize_t number_of_records;   
+} FastqIter;
+
+static void 
+FastqIter_dealloc(FastqIter *self) {
+    Py_CLEAR(self->file);
+    Py_CLEAR(self->sequence_class);
+    PyMem_Free(self->buffer);
+    Py_TYPE(self)->tp_free((PyObject *)self);
+}
+
+static PyTypeObject FastqIter_Type;
+
+static PyObject *
+Fastqiter__new__(PyTypeObject *subtype, PyObject *args, PyObject *kwargs) {
+    PyObject *file = NULL;
+    PyObject *sequence_class = NULL;
+    Py_ssize_t buffer_size = 0;
+
+    static char * _keywords[] = {"file", "sequence_class", "buffer_size", NULL};
+    static char * _format = "OO!n|:SequenceRecord";
+    if (!PyArg_ParseTupleAndKeywords(
+        args, kwargs, _format, _keywords,
+        &file,
+        (PyObject *)&PyType_Type, &sequence_class,
+        &buffer_size)) {
+        return NULL;
+    }
+    if (buffer_size < 1) {
+      PyErr_SetString(PyExc_ValueError, "Starting buffer size too small");
+      return NULL;
+    }
+    FastqIter * self = PyObject_New(FastqIter, subtype);
+    self->buffer_size = buffer_size;
+    self->buffer = PyMem_Malloc(buffer_size);
+    if (self->buffer == NULL) {
+      return PyErr_NoMemory();
+    }
+    self->bytes_in_buffer = 0;
+    self->sequence_class = sequence_class;
+    self->use_custom_class = (sequence_class != &SequenceRecord_Type);
+    self->number_of_records = 0;
+    self->extra_newline = 0; 
+    self->yielded_two_headers = 0;
+    self->eof = 0;
+    self->record_start = 0;
+    self->file = 0;
+    return (PyObject *)self;
+}
+
+static int 
+FastqIter__read_into_buffer(FastqIter *self) {
+    // This function sets self.record_start at 0 and makes sure self.buffer
+    // starts at the start of a FASTQ record. Any incomplete FASTQ remainder
+    // of the already processed buffer is moved to the start of the buffer
+    // and the rest of the buffer is filled up with bytes from the file.
+    char * tmp;
+    Py_ssize_t remaining_bytes;
+    if ((self->record_start == 0) && self->bytes_in_buffer == self->buffer_size) {
+      // Buffer too small, double it.
+      self->buffer_size *= 2;
+      tmp = PyMem_Realloc(self->buffer, self->buffer_size); 
+      if (tmp == NULL) {
+        PyErr_NoMemory();
+        return -1;
+      }
+    }
+    else {
+      // Move the incomplete record from the end of the buffer to the beginning.
+      remaining_bytes = self->bytes_in_buffer - self->record_start;
+      // Memmove copies safely when dest and src overlap.
+      memmove(self->buffer, self->buffer + self->record_start, remaining_bytes);
+      self->bytes_in_buffer = remaining_bytes;
+      self->record_start = 0;
+    }
+
+    Py_ssize_t empty_bytes_in_buffer = self->buffer_size - self->bytes_in_buffer;
+    PyObject * filechunk = PyObject_CallMethodObjArgs(
+      self->file, "read", PyLong_FromSsize_t(empty_bytes_in_buffer));
+    if (filechunk == NULL || !PyBytes_CheckExact(filechunk)) {
+        PyErr_SetString(PyExc_TypeError, "self.file is not a binary file reader.");
+        return -1;
+    }
+    Py_ssize_t filechunk_size = PyBytes_GET_SIZE(filechunk);
+    if (filechunk_size > empty_bytes_in_buffer) {
+        PyErr_Format(PyExc_ValueError, 
+                    "read() returned too much data: %ld bytes requested, "
+                    "%ld bytes returned.", empty_bytes_in_buffer, filechunk_size);
+        return -1;
+    }
+    memcpy(self->buffer + self->bytes_in_buffer, 
+           PyBytes_AS_STRING(filechunk), filechunk_size);
+  
+    if (!string_is_ascii(self->buffer + self->bytes_in_buffer, filechunk_size)) {
+      
+    }
+
+
+
+
+
+
 }
