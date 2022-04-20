@@ -521,7 +521,7 @@ FastqIter__read_into_buffer(FastqIter *self) {
 
     Py_ssize_t empty_bytes_in_buffer = self->buffer_size - self->bytes_in_buffer;
     PyObject * filechunk = PyObject_CallMethodObjArgs(
-      self->file, self->read_method, PyLong_FromSsize_t(empty_bytes_in_buffer));
+      self->file, self->read_method, PyLong_FromSsize_t(empty_bytes_in_buffer), NULL);
     if (filechunk == NULL || !PyBytes_CheckExact(filechunk)) {
         PyErr_SetString(PyExc_TypeError, "self.file is not a binary file reader.");
         return -1;
