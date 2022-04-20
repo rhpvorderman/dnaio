@@ -1,7 +1,11 @@
 #define PY_SSIZE_T_CLEAN
 #include <Python.h>
 #include "structmember.h"         // PyMemberDef
-#include "ascii_check.h"
+#if defined(USE_SSE2)
+    #include "ascii_check_sse2.h"
+#else
+    #include "ascii_check.h"
+#endif
 
 typedef struct {
     PyObject_HEAD
