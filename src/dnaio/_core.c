@@ -599,6 +599,7 @@ FastqIter_next(FastqIter * self) {
         buffer_end = self->buffer + self->bytes_in_buffer;
         if (self->eof) {
             PyErr_SetNone(PyExc_StopIteration);
+            return NULL;
         }
         name_end = memchr(self->record_start, '\n', (buffer_end - self->record_start));
         if (name_end == NULL) {
