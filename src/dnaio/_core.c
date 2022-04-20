@@ -738,6 +738,8 @@ PyInit__core(void)
 {
     PyObject *m;
 
+    FastqFormatError = PyErr_NewException("_core.FastqFormatError", NULL, NULL);
+
     m = PyModule_Create(&_core_module);
     if (m == NULL)
         return NULL;
