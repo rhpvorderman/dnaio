@@ -524,6 +524,7 @@ FastqIter__read_into_buffer(FastqIter *self) {
       self->file, self->read_method, PyLong_FromSsize_t(empty_bytes_in_buffer), NULL);
     if (filechunk == NULL || !PyBytes_CheckExact(filechunk)) {
         PyErr_SetString(PyExc_TypeError, "self.file is not a binary file reader.");
+        Py_DECREF(filechunk);
         return -1;
     }
     Py_ssize_t filechunk_size = PyBytes_GET_SIZE(filechunk);
@@ -531,10 +532,12 @@ FastqIter__read_into_buffer(FastqIter *self) {
         PyErr_Format(PyExc_ValueError, 
                     "read() returned too much data: %ld bytes requested, "
                     "%ld bytes returned.", empty_bytes_in_buffer, filechunk_size);
+        Py_DECREF(filechunk);
         return -1;
     }
     memcpy(self->buffer + self->bytes_in_buffer, 
            PyBytes_AS_STRING(filechunk), filechunk_size);
+    Py_DECREF(filechunk);
   
     if (!string_is_ascii(self->buffer + self->bytes_in_buffer, filechunk_size)) {
         PyErr_SetString(FastqFormatError, 
