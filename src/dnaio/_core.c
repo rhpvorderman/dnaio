@@ -472,6 +472,7 @@ typedef struct {
   int yielded_two_headers;
   int eof;
   PyObject * file; 
+  PyObject * read_method;
   char * record_start;
   Py_ssize_t number_of_records;   
 } FastqIter;
@@ -480,6 +481,7 @@ static void
 FastqIter_dealloc(FastqIter *self) {
     Py_CLEAR(self->file);
     Py_CLEAR(self->sequence_class);
+    Py_CLEAR(self->read_method);
     PyMem_Free(self->buffer);
     Py_TYPE(self)->tp_free((PyObject *)self);
 }
@@ -514,12 +516,13 @@ Fastqiter__new__(PyTypeObject *subtype, PyObject *args, PyObject *kwargs) {
     self->record_start = self->buffer;
     self->bytes_in_buffer = 0;
     self->sequence_class = sequence_class;
-    self->use_custom_class = (sequence_class != &SequenceRecord_Type);
+    self->use_custom_class = (sequence_class != (PyObject *)&SequenceRecord_Type);
     self->number_of_records = 0;
     self->extra_newline = 0; 
     self->yielded_two_headers = 0;
     self->eof = 0;
     self->file = file;
+    self->read_method = PyUnicode_FromString("read");
     return (PyObject *)self;
 }
 
@@ -553,7 +556,7 @@ FastqIter__read_into_buffer(FastqIter *self) {
 
     Py_ssize_t empty_bytes_in_buffer = self->buffer_size - self->bytes_in_buffer;
     PyObject * filechunk = PyObject_CallMethodObjArgs(
-      self->file, "read", PyLong_FromSsize_t(empty_bytes_in_buffer));
+      self->file, self->read_method, PyLong_FromSsize_t(empty_bytes_in_buffer));
     if (filechunk == NULL || !PyBytes_CheckExact(filechunk)) {
         PyErr_SetString(PyExc_TypeError, "self.file is not a binary file reader.");
         return -1;
@@ -686,7 +689,7 @@ FastqIter_next(FastqIter * self) {
         name_start = self->record_start + 1;  // skip @
         second_header_start = second_header_start + 1;  // skip + 
         name_length = name_end - name_start;
-        sequence_length = sequence_end - sequence_length;
+        sequence_length = sequence_end - sequence_start;
         second_header_length = second_header_end - second_header_start;
         qualities_length = qualities_end - qualities_start;
 
@@ -751,5 +754,5 @@ static PyTypeObject FastqIter_Type = {
     .tp_dealloc = (destructor)FastqIter_dealloc,
     .tp_new = Fastqiter__new__,
     .tp_iter = FastqIter_iter,
-    .tp_next = FastqIter_next,
+    .tp_iternext = (iternextfunc)FastqIter_next,
 };
