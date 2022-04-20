@@ -513,6 +513,7 @@ FastqIter__read_into_buffer(FastqIter *self) {
         PyErr_NoMemory();
         return -1;
       }
+      self->buffer = tmp;
     }
     else {
       // Move the incomplete record from the end of the buffer to the beginning.
