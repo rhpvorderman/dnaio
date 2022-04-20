@@ -690,6 +690,11 @@ FastqIter_next(FastqIter * self) {
             return NULL;
         }
         
+        if ((self->number_of_records == 0) && !(self->yielded_two_headers)) {
+            self->yielded_two_headers = 1;
+            return PyBool_FromLong(second_header_length);
+        }
+        
         name = PyUnicode_New(name_length, 127);
         sequence = PyUnicode_New(sequence_length, 127);
         qualities = PyUnicode_New(qualities_length, 127);
