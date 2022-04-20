@@ -409,7 +409,7 @@ static PyMappingMethods SequenceRecordMappingMethods = {
     .mp_subscript = (binaryfunc)SequenceRecord_get_item,
 };
 
-static PyTypeObject SequenceRecord_type = {
+static PyTypeObject SequenceRecord_Type = {
     PyVarObject_HEAD_INIT(NULL, 0)
     .tp_name = "_sequence.SequenceRecord",
     .tp_flags = Py_TPFLAGS_DEFAULT,
@@ -616,7 +616,7 @@ FastqIter_next(FastqIter * self) {
             }
             continue;
         }
-
+        
         second_header_start = sequence_end + 1;
         second_header_end = memchr(second_header_start, '\n', (buffer_end - second_header_start));
         if (second_header_end == NULL) {
@@ -626,7 +626,7 @@ FastqIter_next(FastqIter * self) {
             continue;
         }
 
-        qualities_start = qualities_end + 1;
+        qualities_start = second_header_end + 1;
         qualities_end = memchr(qualities_start, '\n', (buffer_end - qualities_start));
         if (qualities_end == NULL) {
             if (FastqIter__read_into_buffer(self) != 0) {
@@ -643,11 +643,11 @@ FastqIter_next(FastqIter * self) {
                 return NULL;
         }
 
-        if (sequence_start[0] != '+') {
+        if (second_header_start[0] != '+') {
             PyErr_Format(
                 FastqFormatError, 
                 "Line expected to start with '+' but found '%c'", 
-                sequence_start[0]);
+                second_header_start[0]);
                 return NULL;
         }
 
@@ -689,7 +689,7 @@ FastqIter_next(FastqIter * self) {
             PyErr_SetString(FastqFormatError, "Length of sequence and qualities differ");
             return NULL;
         }
-        
+
         if ((self->number_of_records == 0) && !(self->yielded_two_headers)) {
             self->yielded_two_headers = 1;
             return PyBool_FromLong(second_header_length);
@@ -701,6 +701,9 @@ FastqIter_next(FastqIter * self) {
         if ((name == NULL) || (sequence == NULL) || (qualities == NULL)) {
             return PyErr_NoMemory();
         }
+        memcpy(PyUnicode_DATA(name), name_start, name_length);
+        memcpy(PyUnicode_DATA(sequence), sequence_start, sequence_length);
+        memcpy(PyUnicode_DATA(qualities), qualities_start, qualities_length);
 
         if (self->use_custom_class) {
             retval = PyObject_CallFunctionObjArgs(self->sequence_class, name, sequence, qualities);
@@ -748,7 +751,7 @@ PyInit__core(void)
     m = PyModule_Create(&_core_module);
     if (m == NULL)
         return NULL;
-    PyTypeObject * SequenceRecordType = &SequenceRecord_type;
+    PyTypeObject * SequenceRecordType = &SequenceRecord_Type;
     if (PyType_Ready(SequenceRecordType) != 0) { 
         return NULL;
     }
