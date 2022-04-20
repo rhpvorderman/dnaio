@@ -410,6 +410,7 @@ static PyMappingMethods SequenceRecordMappingMethods = {
 };
 
 static PyTypeObject SequenceRecord_type = {
+    PyVarObject_HEAD_INIT(NULL, 0)
     .tp_name = "_sequence.SequenceRecord",
     .tp_flags = Py_TPFLAGS_DEFAULT,
     .tp_basicsize = sizeof(SequenceRecord),
@@ -471,7 +472,7 @@ typedef struct {
   int yielded_two_headers;
   int eof;
   PyObject * file; 
-  Py_ssize_t record_start;
+  char * record_start;
   Py_ssize_t number_of_records;   
 } FastqIter;
 
@@ -510,6 +511,7 @@ Fastqiter__new__(PyTypeObject *subtype, PyObject *args, PyObject *kwargs) {
     if (self->buffer == NULL) {
       return PyErr_NoMemory();
     }
+    self->record_start = self->buffer;
     self->bytes_in_buffer = 0;
     self->sequence_class = sequence_class;
     self->use_custom_class = (sequence_class != &SequenceRecord_Type);
@@ -517,8 +519,7 @@ Fastqiter__new__(PyTypeObject *subtype, PyObject *args, PyObject *kwargs) {
     self->extra_newline = 0; 
     self->yielded_two_headers = 0;
     self->eof = 0;
-    self->record_start = 0;
-    self->file = 0;
+    self->file = file;
     return (PyObject *)self;
 }
 
@@ -532,7 +533,7 @@ FastqIter__read_into_buffer(FastqIter *self) {
     // and the rest of the buffer is filled up with bytes from the file.
     char * tmp;
     Py_ssize_t remaining_bytes;
-    if ((self->record_start == 0) && self->bytes_in_buffer == self->buffer_size) {
+    if ((self->record_start == self->buffer) && self->bytes_in_buffer == self->buffer_size) {
       // Buffer too small, double it.
       self->buffer_size *= 2;
       tmp = PyMem_Realloc(self->buffer, self->buffer_size); 
@@ -543,12 +544,12 @@ FastqIter__read_into_buffer(FastqIter *self) {
     }
     else {
       // Move the incomplete record from the end of the buffer to the beginning.
-      remaining_bytes = self->bytes_in_buffer - self->record_start;
+      remaining_bytes = self->bytes_in_buffer - (self->record_start - self->buffer);
       // Memmove copies safely when dest and src overlap.
-      memmove(self->buffer, self->buffer + self->record_start, remaining_bytes);
+      memmove(self->buffer, self->record_start, remaining_bytes);
       self->bytes_in_buffer = remaining_bytes;
-      self->record_start = 0;
     }
+    self->record_start = self->buffer;
 
     Py_ssize_t empty_bytes_in_buffer = self->buffer_size - self->bytes_in_buffer;
     PyObject * filechunk = PyObject_CallMethodObjArgs(
@@ -610,14 +611,28 @@ FastqIter_iter(PyObject * self){
 
 static PyObject *
 FastqIter_next(FastqIter * self) {
+    PyObject * retval;
+    PyObject * name;
+    PyObject * sequence;
+    PyObject * qualities;
+    char * buffer_end;
+    char * name_start;
+    char * name_end;
+    char * sequence_start; 
+    char * sequence_end;
+    char * second_header_start;
+    char * second_header_end;
+    char * qualities_start;
+    char * qualities_end; 
+    Py_ssize_t name_length, sequence_length, second_header_length, qualities_length;
+    // Repeatedly attempt to parse the buffer until we have found a full record.
+    // If an attempt fails, we read more data before retrying.
     while (1) {
+        buffer_end = self->buffer + self->bytes_in_buffer;
         if (self->eof) {
             PyErr_SetNone(PyExc_StopIteration);
         }
-        char * name_start = self->buffer + self->record_start;
-        char * name_end = memchr(
-            name_start, '\n',
-            (self->buffer - self->record_start));
+        name_end = memchr(self->record_start, '\n', (buffer_end - self->record_start));
         if (name_end == NULL) {
             if (FastqIter__read_into_buffer(self) != 0) {
               return NULL;
@@ -625,23 +640,116 @@ FastqIter_next(FastqIter * self) {
             continue;
         }
         
-        char * sequence_start = name_end + 1;
-        char * sequence_end = memchr(
-            self->buffer + self->record_start, '\n',
-            (self->bytes_in_buffer - self->record_start));
+        sequence_start = name_end + 1;
+        sequence_end = memchr(sequence_start, '\n', (buffer_end - sequence_start));
         if (sequence_end == NULL) {
             if (FastqIter__read_into_buffer(self) != 0) {
-              return NULL;
+                return NULL;
             }
             continue;
         }
 
+        second_header_start = sequence_end + 1;
+        second_header_end = memchr(second_header_start, '\n', (buffer_end - second_header_start));
+        if (second_header_end == NULL) {
+            if (FastqIter__read_into_buffer(self) != 0) {
+                return NULL;
+            }
+            continue;
+        }
+
+        qualities_start = qualities_end + 1;
+        qualities_end = memchr(qualities_start, '\n', (buffer_end - qualities_start));
+        if (qualities_end == NULL) {
+            if (FastqIter__read_into_buffer(self) != 0) {
+                return NULL;
+            }
+            continue;
+        }
+
+        if (self->record_start[0] != '@') {
+            PyErr_Format(
+                FastqFormatError, 
+                "Line expected to start with '@' but found '%c'", 
+                self->record_start[0]);
+                return NULL;
+        }
+
+        if (sequence_start[0] != '+') {
+            PyErr_Format(
+                FastqFormatError, 
+                "Line expected to start with '+' but found '%c'", 
+                sequence_start[0]);
+                return NULL;
+        }
+
+        name_start = self->record_start + 1;  // skip @
+        second_header_start = second_header_start + 1;  // skip + 
+        name_length = name_end - name_start;
+        sequence_length = sequence_end - sequence_length;
+        second_header_length = second_header_end - second_header_start;
+        qualities_length = qualities_end - qualities_start;
+
+        // Check for \r\n line-endings and compensate;
+        if ((name_end -1)[0] == '\r') {
+            name_length -= 1;
+        }
+        if ((sequence_end - 1)[0] == '\r') {
+            sequence_length -= 1;
+        }
+        if ((second_header_end - 1)[0] == '\r') {
+            second_header_length -= 1;
+        }
+        if ((qualities_end - 1)[0] == '\r') {
+            qualities_length -= 1;
+        }
+
+        if (second_header_length) {
+            if ((name_length != second_header_length) || memcmp(second_header_start, name_start, second_header_length) !=0) {
+                PyErr_Format(FastqFormatError, 
+                            "Sequence descriptions don't match (%R != %R).\n"
+                            "The second sequence header must be either empty or equal "
+                            "to the first description",
+                            PyUnicode_DecodeASCII(name_start, name_length, "strict"),
+                            PyUnicode_DecodeASCII(second_header_start, second_header_length, "strict")
+                            );
+                return NULL;
+            }
+        }
+
+        if (sequence_length != qualities_length) {
+            PyErr_SetString(FastqFormatError, "Length of sequence and qualities differ");
+            return NULL;
+        }
+        
+        name = PyUnicode_New(name_length, 127);
+        sequence = PyUnicode_New(sequence_length, 127);
+        qualities = PyUnicode_New(qualities_length, 127);
+        if ((name == NULL) || (sequence == NULL) || (qualities == NULL)) {
+            return PyErr_NoMemory();
+        }
+
+        if (self->use_custom_class) {
+            retval = PyObject_CallFunctionObjArgs(self->sequence_class, name, sequence, qualities);
+        }
+        else {
+            retval = new_sequence_record(name, sequence, qualities);
+        }
+
+        self->number_of_records += 1; 
+        self->record_start = qualities_end + 1;
+        return retval;
     }
 }
 
 
-
-
-
-
-}
+static PyTypeObject FastqIter_Type = {
+    PyVarObject_HEAD_INIT(NULL, 0)
+    .tp_name = "_core.FastqIter",
+    .tp_flags = Py_TPFLAGS_DEFAULT,
+    .tp_basicsize = sizeof(FastqIter),
+    .tp_dealloc = (destructor)FastqIter_dealloc,
+    .tp_new = Fastqiter__new__,
+    .tp_iter = FastqIter_iter,
+    .tp_next = FastqIter_next,
+};
