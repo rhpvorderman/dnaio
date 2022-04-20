@@ -1,5 +1,4 @@
 import platform
-import sys
 
 from setuptools import setup, Extension
 import setuptools_scm  # noqa  Ensure it’s installed
@@ -12,7 +11,7 @@ else:
 setup(
     ext_modules=[
         Extension(
-            "dnaio._core", sources=["src/dnaio/_core.pyx"], define_macros=DEFINE_MACROS
+            "dnaio._core", sources=["src/dnaio/_core.c"], define_macros=DEFINE_MACROS
         ),
     ],
 )
