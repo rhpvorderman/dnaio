@@ -426,41 +426,6 @@ static PyTypeObject SequenceRecord_type = {
 };
 
 
-static struct PyModuleDef _sequence_module = {
-    PyModuleDef_HEAD_INIT,
-    "_sequence",   /* name of module */
-    NULL, /* module documentation, may be NULL */
-    -1,
-    NULL  /* module methods */
-};
-
-
-PyMODINIT_FUNC
-PyInit__sequence(void)
-{
-    PyObject *m;
-
-    m = PyModule_Create(&_sequence_module);
-    if (m == NULL)
-        return NULL;
-    PyTypeObject * SequenceRecordType = &SequenceRecord_type;
-    if (PyType_Ready(SequenceRecordType) != 0) { 
-        return NULL;
-    }
-    Py_INCREF((PyObject *)SequenceRecordType);
-    if (PyModule_AddObject(
-            m, "SequenceRecord", (PyObject *)SequenceRecordType) != 0) {
-        return NULL;
-    }
-    // Add aliases for backwards compatibility
-    Py_INCREF((PyObject *)SequenceRecordType);
-    if (PyModule_AddObject(
-            m, "Sequence", (PyObject *)SequenceRecordType) != 0) {
-        return NULL;
-    }
-    return m;
-}
-
 typedef struct {
   PyObject_HEAD 
   Py_ssize_t buffer_size;
@@ -756,3 +721,53 @@ static PyTypeObject FastqIter_Type = {
     .tp_iter = FastqIter_iter,
     .tp_iternext = (iternextfunc)FastqIter_next,
 };
+
+
+
+static struct PyModuleDef _core_module = {
+    PyModuleDef_HEAD_INIT,
+    "_core",   /* name of module */
+    NULL, /* module documentation, may be NULL */
+    -1,
+    NULL  /* module methods */
+};
+
+
+PyMODINIT_FUNC
+PyInit__core(void)
+{
+    PyObject *m;
+
+    m = PyModule_Create(&_core_module);
+    if (m == NULL)
+        return NULL;
+    PyTypeObject * SequenceRecordType = &SequenceRecord_type;
+    if (PyType_Ready(SequenceRecordType) != 0) { 
+        return NULL;
+    }
+    Py_INCREF((PyObject *)SequenceRecordType);
+    if (PyModule_AddObject(
+            m, "SequenceRecord", (PyObject *)SequenceRecordType) != 0) {
+        return NULL;
+    }
+    // Add aliases for backwards compatibility
+    Py_INCREF((PyObject *)SequenceRecordType);
+    if (PyModule_AddObject(
+            m, "Sequence", (PyObject *)SequenceRecordType) != 0) {
+        return NULL;
+    }
+
+    PyTypeObject * FastqIterType = &FastqIter_Type;
+    if (PyType_Ready(FastqIterType) != 0) {
+        return NULL;
+    }
+    Py_INCREF((PyObject *)FastqIterType);
+    if (PyModule_AddObject(m, "FastqIter", (PyObject *)FastqIterType) !=0) {
+        return NULL;
+    }
+    // Placeholders
+    PyModule_AddObject(m, "record_names_match", Py_None);
+    PyModule_AddObject(m, "paired_fastq_heads", Py_None);
+    PyModule_AddObject(m, "bytes_ascii_check", Py_None); 
+    return m;
+}
