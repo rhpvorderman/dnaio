@@ -460,8 +460,8 @@ static PyTypeObject FastqIter_Type;
 static PyObject *
 Fastqiter__new__(PyTypeObject *subtype, PyObject *args, PyObject *kwargs) {
     PyObject *file = NULL;
-    PyObject *sequence_class = NULL;
-    Py_ssize_t buffer_size = 0;
+    PyObject *sequence_class = (PyObject *)&SequenceRecord_Type;
+    Py_ssize_t buffer_size = 128 * 1024;
 
     static char * _keywords[] = {"file", "sequence_class", "buffer_size", NULL};
     static char * _format = "OO!n|:SequenceRecord";
@@ -484,12 +484,14 @@ Fastqiter__new__(PyTypeObject *subtype, PyObject *args, PyObject *kwargs) {
     }
     self->record_start = self->buffer;
     self->bytes_in_buffer = 0;
+    Py_INCREF(sequence_class);
     self->sequence_class = sequence_class;
     self->use_custom_class = (sequence_class != (PyObject *)&SequenceRecord_Type);
     self->number_of_records = 0;
     self->extra_newline = 0; 
     self->yielded_two_headers = 0;
     self->eof = 0;
+    Py_INCREF(file);
     self->file = file;
     self->read_method = PyUnicode_FromString("read");
     return (PyObject *)self;
