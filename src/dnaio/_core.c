@@ -120,9 +120,11 @@ SequenceRecord__new__(PyTypeObject *tp, PyObject *args, PyObject *kwargs)
     }
     if (!PyUnicode_IS_COMPACT_ASCII(name)) {
         PyErr_SetString(PyExc_ValueError, "name must be a valid ASCII-string.");
+        return NULL;
     }
     if (!PyUnicode_IS_COMPACT_ASCII(sequence)) {
         PyErr_SetString(PyExc_ValueError, "sequence must be a valid ASCII-string.");
+        return NULL;
     }
     if (qualities == Py_None) {
         qualities = NULL;
@@ -138,6 +140,7 @@ SequenceRecord__new__(PyTypeObject *tp, PyObject *args, PyObject *kwargs)
         if (!PyUnicode_IS_COMPACT_ASCII(qualities)) {
             PyErr_SetString(PyExc_ValueError, 
                             "qualities must be a valid ASCII-string.");
+            return NULL;
         }
         // Type already checked, can use unsafe macros here.
         if(PyUnicode_GET_LENGTH(sequence) != PyUnicode_GET_LENGTH(qualities)) {
@@ -195,6 +198,10 @@ SequenceRecord_set_name(SequenceRecord *self, PyObject *value, void *closure)
                      Py_TYPE(value)->tp_name);
         return -1;
     }
+    if (!PyUnicode_IS_COMPACT_ASCII(value)) {
+        PyErr_SetString(PyExc_ValueError, "name must be a valid ASCII-string.");
+        return -1;
+    }
     PyObject * tmp = self->name;
     Py_INCREF(value);
     self->name = value;
@@ -213,6 +220,10 @@ SequenceRecord_set_sequence(SequenceRecord *self, PyObject *value, void *closure
         PyErr_Format(PyExc_TypeError, 
                      "sequence must be of type str. Got %s", 
                      Py_TYPE(value)->tp_name);
+        return -1;
+    }
+    if (!PyUnicode_IS_COMPACT_ASCII(value)) {
+        PyErr_SetString(PyExc_ValueError, "sequence must be a valid ASCII-string.");
         return -1;
     }
     PyObject * tmp = self->sequence;
@@ -240,6 +251,10 @@ SequenceRecord_set_qualities(SequenceRecord *self, PyObject *value, void *closur
         PyErr_Format(PyExc_TypeError, 
                      "sequence must be of type str. Got %s", 
                      Py_TYPE(value)->tp_name);
+        return -1;
+    }
+    if (!PyUnicode_IS_COMPACT_ASCII(value)) {
+        PyErr_SetString(PyExc_ValueError, "qualities must be a valid ASCII-string.");
         return -1;
     }
     tmp = self->qualities;
