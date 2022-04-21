@@ -118,6 +118,12 @@ SequenceRecord__new__(PyTypeObject *tp, PyObject *args, PyObject *kwargs)
         &qualities)) {
         return NULL;
     }
+    if (!PyUnicode_IS_COMPACT_ASCII(name)) {
+        PyErr_SetString(PyExc_ValueError, "name must be a valid ASCII-string.");
+    }
+    if (!PyUnicode_IS_COMPACT_ASCII(sequence)) {
+        PyErr_SetString(PyExc_ValueError, "sequence must be a valid ASCII-string.");
+    }
     if (qualities == Py_None) {
         qualities = NULL;
     }
@@ -128,6 +134,10 @@ SequenceRecord__new__(PyTypeObject *tp, PyObject *args, PyObject *kwargs)
                 "qualities must be of type str, got: %s", 
                 Py_TYPE(qualities)->tp_name);
             return NULL;
+        }
+        if (!PyUnicode_IS_COMPACT_ASCII(qualities)) {
+            PyErr_SetString(PyExc_ValueError, 
+                            "qualities must be a valid ASCII-string.");
         }
         // Type already checked, can use unsafe macros here.
         if(PyUnicode_GET_LENGTH(sequence) != PyUnicode_GET_LENGTH(qualities)) {
