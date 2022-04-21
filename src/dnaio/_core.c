@@ -7,6 +7,26 @@
     #include "ascii_check.h"
 #endif
 
+static inline int 
+record_ids_match(char * header1, char * header2, size_t header1_length) {
+    size_t id2_length = strcspn(header2, " \t");
+    if (header1_length < id2_length) {
+        return 0;
+    }
+    char end = header1[id2_length];
+    if ((end != 0) && (end != ' ') && (end != '\t')) {
+        return 0;
+    }
+    char header1lastchar = header1[id2_length - 1];
+    char header2lastchar = header2[id2_length - 1];
+    int id1endswithnumber = (header1lastchar >= '1') && (header1lastchar <= '3');
+    int id2endswithnumber = (header2lastchar >= '1') && (header2lastchar <= '3');
+    if (id1endswithnumber && id2endswithnumber) {
+        id2_length -= 1;
+    }
+    return (memcmp(header1, header2, id2_length) == 0);
+}
+
 typedef struct {
     PyObject_HEAD
     PyObject * name;
@@ -364,10 +384,6 @@ SequenceRecord_fastq_bytes(SequenceRecord *self, PyObject *Py_UNUSED(ignore)){
     return sequence_to_fastq_record_impl(self, 0);
 }
 
-#define BYTES_SEQUENCE_FASTQ_BYTES_METHODDEF    \
-    {"fastq_bytes", (PyCFunction)(void(*)(void))BytesSequenceRecord_fastq_bytes, \
-    METH_NOARGS, SequenceRecord_fastq_bytes__doc__}
-
 PyDoc_STRVAR(SequenceRecord_fastq_bytes_two_headers__doc__,
 "Return this record in FASTQ format as a bytes object where the header\n"
 "(after the @) is repeated on the third line.");
@@ -398,10 +414,33 @@ SequenceRecord_qualities_as_bytes(SequenceRecord *self, PyObject *Py_UNUSED(igno
     return PyUnicode_AsASCIIString(self->qualities);
 }
 
+PyDoc_STRVAR(SequenceRecord_is_mate__doc__,
+"Check whether this instance and another are part of the same read pair\n\n");
+
+#define SEQUENCERECORD_IS_MATE_METHODDEF    \
+    {"is_mate", \
+     (PyCFunction)(void(*)(void))SequenceRecord_is_mate, \
+     METH_O, SequenceRecord_is_mate__doc__}
+
+static PyObject *
+SequenceRecord_is_mate(SequenceRecord *self, SequenceRecord *other)
+{
+    if (!(Py_TYPE(other) == &SequenceRecord_Type)) {
+        PyErr_SetString(PyExc_TypeError, "other must be a SequenceRecord object.");
+        return NULL;
+    }
+    char * header1_chars = PyUnicode_DATA(self->name);
+    size_t header1_length = PyUnicode_GET_LENGTH(self->name);
+    char * header2_chars = PyUnicode_DATA(other->name);
+    return PyBool_FromLong(
+        record_ids_match(header1_chars, header2_chars, header1_length));
+}
+
 static PyMethodDef SequenceRecord_methods[] = {
     SEQUENCE_FASTQ_BYTES_METHODDEF,
     SEQUENCE_FASTQ_BYTES_TWO_HEADERS_METHODDEF,
     SEQUENCE_QUALITIES_AS_BYTES_METHODDEF,
+    SEQUENCERECORD_IS_MATE_METHODDEF,
     {NULL}
 };
 
