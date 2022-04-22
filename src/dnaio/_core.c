@@ -495,19 +495,19 @@ static PyTypeObject SequenceRecord_Type = {
 
 
 typedef struct {
-  PyObject_HEAD 
-  Py_ssize_t buffer_size;
-  char * buffer;
-  Py_ssize_t bytes_in_buffer;
-  PyObject * sequence_class;
-  int use_custom_class;
-  int extra_newline;
-  int yielded_two_headers;
-  int eof;
-  PyObject * file; 
-  PyObject * read_method;
-  char * record_start;
-  Py_ssize_t number_of_records;   
+    PyObject_HEAD
+    Py_ssize_t buffer_size;
+    char * buffer;
+    Py_ssize_t bytes_in_buffer;
+    PyObject * sequence_class;
+    int use_custom_class;
+    int extra_newline;
+    int yielded_two_headers;
+    int eof;
+    PyObject * file;
+    PyObject * read_method;
+    char * record_start;
+    Py_ssize_t number_of_records;
 } FastqIter;
 
 static void 
