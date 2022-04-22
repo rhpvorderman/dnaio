@@ -60,49 +60,6 @@ new_sequence_record(PyObject *name, PyObject *sequence, PyObject *qualities){
     return (PyObject *)new_obj;
 }
 
-static inline PyObject *
-create_fastq_record(char * name, char * sequence, char * qualities,
-                    Py_ssize_t name_length,
-                    Py_ssize_t sequence_length,
-                    Py_ssize_t qualities_length,
-                    int two_headers) {
-    // Total size is name + sequence + qualities + 4 newlines + '+' and an
-    // '@' to be put in front of the name.
-    Py_ssize_t total_size = name_length + sequence_length + qualities_length + 6;
-
-    if (two_headers)
-        // We need space for the name after the +.
-        total_size += name_length;
-
-    // This is the canonical way to create an uninitialized bytestring of given size
-    PyObject * retval = PyBytes_FromStringAndSize(NULL, total_size);
-    if (retval == NULL)
-        return PyErr_NoMemory();
-
-    char * retval_ptr = PyBytes_AS_STRING(retval);
-
-    // Write the sequences into the bytestring at the correct positions.
-    size_t cursor;
-    retval_ptr[0] = '@';
-    memcpy(retval_ptr + 1, name, name_length);
-    cursor = name_length + 1;
-    retval_ptr[cursor] = '\n'; cursor += 1;
-    memcpy(retval_ptr + cursor, sequence, sequence_length);
-    cursor += sequence_length;
-    retval_ptr[cursor] = '\n'; cursor += 1;
-    retval_ptr[cursor] = '+'; cursor += 1;
-    if (two_headers){
-        memcpy(retval_ptr + cursor, name, name_length);
-        cursor += name_length;
-    }
-    retval_ptr[cursor] = '\n'; cursor += 1;
-    memcpy(retval_ptr + cursor, qualities, qualities_length);
-    cursor += qualities_length;
-    retval_ptr[cursor] = '\n';
-    return retval;
-}
-
-
 PyDoc_STRVAR(SequenceRecord__init____doc__,
 "SequenceRecord(name, sequence, qualities = None)\n"
 "--\n"
@@ -341,47 +298,71 @@ SequenceRecord__richcompare__(SequenceRecord *self, SequenceRecord *other, int o
     }
 }
 
-static inline PyObject * 
-sequence_to_fastq_record_impl(SequenceRecord *self, int two_headers){
-    if (self->qualities == NULL) {
-        PyErr_SetString(PyExc_ValueError, 
-        "Cannot create FASTQ bytes from a sequence without qualities.");
-    }
-    Py_ssize_t name_length = PyUnicode_GetLength(self->name);
-    Py_ssize_t sequence_length = PyUnicode_GetLength(self->sequence);
-    Py_ssize_t qualities_length = PyUnicode_GetLength(self->qualities);
-    if (name_length == -1 || sequence_length == -1 || qualities_length == -1)
-            // Not of type PyUnicode
-            return NULL;
-    if (!(
-        (PyUnicode_KIND(self->name) == PyUnicode_1BYTE_KIND) && 
-        (PyUnicode_KIND(self->sequence)== PyUnicode_1BYTE_KIND) &&
-        (PyUnicode_KIND(self->qualities) == PyUnicode_1BYTE_KIND))) {
-            PyErr_SetString(
-                PyExc_ValueError, 
-                "Name, sequence and qualities must all be valid ASCII strings."
-            );
-    }
-    // Unsafe macros as type is already checked.
-    char * name = (char *)PyUnicode_1BYTE_DATA(self->name);
-    char * sequence = (char *)PyUnicode_1BYTE_DATA(self->sequence);
-    char * qualities = (char *)PyUnicode_1BYTE_DATA(self->qualities);
-    return create_fastq_record(name, sequence, qualities,
-                               name_length, sequence_length, qualities_length,
-                               two_headers);
-}
-
 PyDoc_STRVAR(SequenceRecord_fastq_bytes__doc__,
 "Return the entire FASTQ record as bytes which can be written\n"
 "into a file.");
 
 #define SEQUENCE_FASTQ_BYTES_METHODDEF    \
     {"fastq_bytes", (PyCFunction)(void(*)(void))SequenceRecord_fastq_bytes, \
-     METH_NOARGS, SequenceRecord_fastq_bytes__doc__}
+     METH_VARARGS | METH_KEYWORDS, SequenceRecord_fastq_bytes__doc__}
 
 static PyObject *
-SequenceRecord_fastq_bytes(SequenceRecord *self, PyObject *Py_UNUSED(ignore)){
-    return sequence_to_fastq_record_impl(self, 0);
+SequenceRecord_fastq_bytes(SequenceRecord *self, PyObject *args, PyObject *kwargs){
+    int two_headers = 0;
+    static char * _keywords[] = {"two_headers", NULL};
+    static char * _format = "|p:SequenceRecord.fastq_bytes";
+    if (!PyArg_ParseTupleAndKeywords(
+        args, kwargs, _format, _keywords,
+        &two_headers)) {
+        return NULL;
+    }
+    if (self->qualities == NULL) {
+        PyErr_SetString(PyExc_ValueError, 
+        "Cannot create FASTQ bytes from a sequence without qualities.");
+        return NULL;
+    }
+    Py_ssize_t name_length = PyUnicode_GET_LENGTH(self->name);
+    Py_ssize_t sequence_length = PyUnicode_GET_LENGTH(self->sequence);
+    Py_ssize_t qualities_length = PyUnicode_GET_LENGTH(self->qualities);
+   
+    char * name = PyUnicode_DATA(self->name);
+    char * sequence = PyUnicode_DATA(self->sequence);
+    char * qualities = PyUnicode_DATA(self->qualities);
+
+    // Total size is name + sequence + qualities + 4 newlines + '+' and an
+    // '@' to be put in front of the name.
+    Py_ssize_t total_size = name_length + sequence_length + qualities_length + 6;
+
+    if (two_headers)
+        // We need space for the name after the +.
+        total_size += name_length;
+
+    // This is the canonical way to create an uninitialized bytestring of given size
+    PyObject * retval = PyBytes_FromStringAndSize(NULL, total_size);
+    if (retval == NULL)
+        return PyErr_NoMemory();
+
+    char * retval_ptr = PyBytes_AS_STRING(retval);
+
+    // Write the sequences into the bytestring at the correct positions.
+    size_t cursor;
+    retval_ptr[0] = '@';
+    memcpy(retval_ptr + 1, name, name_length);
+    cursor = name_length + 1;
+    retval_ptr[cursor] = '\n'; cursor += 1;
+    memcpy(retval_ptr + cursor, sequence, sequence_length);
+    cursor += sequence_length;
+    retval_ptr[cursor] = '\n'; cursor += 1;
+    retval_ptr[cursor] = '+'; cursor += 1;
+    if (two_headers){
+        memcpy(retval_ptr + cursor, name, name_length);
+        cursor += name_length;
+    }
+    retval_ptr[cursor] = '\n'; cursor += 1;
+    memcpy(retval_ptr + cursor, qualities, qualities_length);
+    cursor += qualities_length;
+    retval_ptr[cursor] = '\n';
+    return retval;
 }
 
 PyDoc_STRVAR(SequenceRecord_fastq_bytes_two_headers__doc__,
@@ -396,7 +377,11 @@ PyDoc_STRVAR(SequenceRecord_fastq_bytes_two_headers__doc__,
 static PyObject *
 SequenceRecord_fastq_bytes_two_headers(SequenceRecord *self, PyObject *Py_UNUSED(ignore))
 {
-    return sequence_to_fastq_record_impl(self, 1);
+    PyObject *args = PyTuple_New(1);
+    Py_INCREF(Py_True);
+    PyTuple_SET_ITEM(args, 0 , Py_True);
+    PyObject *kwargs = PyDict_New();
+    return SequenceRecord_fastq_bytes(self, args, kwargs);
 }
 
 PyDoc_STRVAR(SequenceRecord_qualities_as_bytes__doc__,
