@@ -304,17 +304,36 @@ PyDoc_STRVAR(SequenceRecord_fastq_bytes__doc__,
 
 #define SEQUENCE_FASTQ_BYTES_METHODDEF    \
     {"fastq_bytes", (PyCFunction)(void(*)(void))SequenceRecord_fastq_bytes, \
-     METH_VARARGS | METH_KEYWORDS, SequenceRecord_fastq_bytes__doc__}
+     METH_FASTCALL | METH_KEYWORDS, SequenceRecord_fastq_bytes__doc__}
 
 static PyObject *
-SequenceRecord_fastq_bytes(SequenceRecord *self, PyObject *args, PyObject *kwargs){
+SequenceRecord_fastq_bytes(SequenceRecord *self, 
+                           PyObject *const *args, 
+                           Py_ssize_t nargs, 
+                           PyObject *kwnames){
     int two_headers = 0;
-    static char * _keywords[] = {"two_headers", NULL};
-    static char * _format = "|p:SequenceRecord.fastq_bytes";
-    if (!PyArg_ParseTupleAndKeywords(
-        args, kwargs, _format, _keywords,
-        &two_headers)) {
-        return NULL;
+    if (nargs || kwnames) {
+        if (nargs > 1) {
+            PyErr_Format(PyExc_TypeError, 
+                         "fastq_bytes() takes at most 1 argument (%ld given)", 
+                          nargs);
+            return NULL;
+        }
+        two_headers = PyObject_IsTrue(args[0]);
+        if (kwnames) {
+            Py_ssize_t nkwargs = PyTuple_GET_SIZE(kwnames);
+            if ((nargs + nkwargs) > 1) {
+                PyErr_Format(PyExc_TypeError, 
+                         "fastq_bytes() takes at most 1 argument (%ld given)", 
+                          nargs + nkwargs);
+                return NULL;
+            }
+            PyObject * argname = PyTuple_GET_ITEM(kwnames, 0);
+            if (strcmp(PyUnicode_DATA(argname), "two_headers") != 0) {
+                PyErr_Format(PyExc_TypeError, "fastq_bytes() got an unexpected keyword argument %R", argname);
+                return NULL;
+            }
+        }
     }
     if (self->qualities == NULL) {
         PyErr_SetString(PyExc_ValueError, 
@@ -377,11 +396,11 @@ PyDoc_STRVAR(SequenceRecord_fastq_bytes_two_headers__doc__,
 static PyObject *
 SequenceRecord_fastq_bytes_two_headers(SequenceRecord *self, PyObject *Py_UNUSED(ignore))
 {
-    PyObject *args = PyTuple_New(1);
     Py_INCREF(Py_True);
-    PyTuple_SET_ITEM(args, 0 , Py_True);
-    PyObject *kwargs = PyDict_New();
-    return SequenceRecord_fastq_bytes(self, args, kwargs);
+    PyObject *args[] = {Py_True};
+    PyObject * retval = SequenceRecord_fastq_bytes(self, args, (Py_ssize_t)1, NULL);
+    Py_DECREF(Py_True);
+    return retval;
 }
 
 PyDoc_STRVAR(SequenceRecord_qualities_as_bytes__doc__,
