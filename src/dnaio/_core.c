@@ -567,6 +567,25 @@ Fastqiter__new__(PyTypeObject *subtype, PyObject *args, PyObject *kwargs) {
 
 static PyObject * FastqFormatError;
 
+static PyObject * 
+raise_fastq_format_error(Py_ssize_t line_no, char * format, ...) {
+    va_list argp;
+    va_start(argp, format);
+    PyObject * message = PyUnicode_FromFormatV(format, argp);
+    PyObject * line_number = NULL; 
+    if (line_no == -1) {
+        Py_INCREF(Py_None);
+        line_number = Py_None;
+    } else {
+        line_number = PyLong_FromSsize_t(line_no);
+    }
+    PyObject * error = PyObject_CallFunctionObjArgs(FastqFormatError, message, line_number);
+    Py_DECREF(message);
+    Py_DECREF(line_number);
+    PyErr_SetNone(error);
+    return NULL;
+}
+
 static int 
 FastqIter__read_into_buffer(FastqIter *self) {
     // This function sets self.record_start at 0 and makes sure self.buffer
@@ -824,6 +843,8 @@ PyMODINIT_FUNC
 PyInit__core(void)
 {
     PyObject *m;
+
+    PyObject *exceptions_module = PyImport
 
     FastqFormatError = PyErr_NewException("_core.FastqFormatError", NULL, NULL);
 
