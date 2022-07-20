@@ -984,6 +984,7 @@ records_are_mates(PyObject *module, PyObject *const *args, Py_ssize_t nargs) {
 static PyMethodDef _core_methods[] = {
     RECORD_NAMES_MATCH_METHODDEF,
     RECORDS_ARE_MATES_METHODDEF,
+    {NULL},
 };
 
 static struct PyModuleDef _core_module = {
