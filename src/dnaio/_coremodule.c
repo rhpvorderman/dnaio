@@ -1036,8 +1036,6 @@ PyInit__core(void)
         return NULL;
     }
     // Placeholders
-    PyModule_AddObject(m, "record_names_match", Py_None);
     PyModule_AddObject(m, "paired_fastq_heads", Py_None);
-    PyModule_AddObject(m, "bytes_ascii_check", Py_None); 
     return m;
 }
