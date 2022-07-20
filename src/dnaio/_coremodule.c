@@ -8,7 +8,8 @@
 #endif
 
 static inline int 
-record_ids_match(char * header1, char * header2, size_t header1_length) {
+record_ids_match(char * header1, char * header2,
+size_t header1_length) {
     size_t id2_length = strcspn(header2, " \t");
     if (header1_length < id2_length) {
         return 0;
@@ -565,7 +566,19 @@ Fastqiter__new__(PyTypeObject *subtype, PyObject *args, PyObject *kwargs) {
     return (PyObject *)self;
 }
 
-static PyObject * FastqFormatError;
+static PyObject *FastqFormatError;
+
+static inline void 
+raise_FastqFormatError(PyObject *message, Py_ssize_t line) {
+    PyObject *line_obj;
+    if (line < 0) {
+        line_obj = Py_None;
+    } else {
+        line_obj = PyLong_FromSsize_t(line);
+    }
+    PyObject *err = PyObject_CallFunctionObjArgs(FastqFormatError, message, line_obj);
+    PyErr_SetNone(err);
+}
 
 static int 
 FastqIter__read_into_buffer(FastqIter *self) {
@@ -615,8 +628,9 @@ FastqIter__read_into_buffer(FastqIter *self) {
     Py_DECREF(filechunk);
   
     if (!string_is_ascii(self->buffer + self->bytes_in_buffer, filechunk_size)) {
-        PyErr_SetString(FastqFormatError, 
-                        "Non-ASCII characters found in record.");
+        raise_FastqFormatError(
+            PyUnicode_FromString("Non-ASCII characters found in record."), 
+            -1);
         return -1;
     }
     self->bytes_in_buffer += filechunk_size;
@@ -640,10 +654,22 @@ FastqIter__read_into_buffer(FastqIter *self) {
                 // was not present in the original input.
                 self->bytes_in_buffer -= 1;
             }
-            PyErr_Format(FastqFormatError, 
-                "Premature end of file encountered. The incomplete final record was: %500S",
-                PyUnicode_DecodeASCII(self->record_start, self->bytes_in_buffer, NULL));
-                return -1;
+            PyObject *record = PyUnicode_DecodeASCII(
+                        self->record_start, self->bytes_in_buffer, NULL);
+            Py_ssize_t record_line_count = PyUnicode_Count(
+                record, 
+                PyUnicode_FromString("\n"),
+                0,
+                self->bytes_in_buffer
+            );
+            raise_FastqFormatError(
+                PyUnicode_FromFormat( 
+                    "Premature end of file encountered. The incomplete final "
+                    "record was: %500S",
+                    record
+                ),
+                self->number_of_records * 4 + record_line_count);
+            return -1;
         }
     }
     return 0;
@@ -715,19 +741,23 @@ FastqIter_next(FastqIter * self) {
         }
 
         if (self->record_start[0] != '@') {
-            PyErr_Format(
-                FastqFormatError, 
-                "Line expected to start with '@' but found '%c'", 
-                self->record_start[0]);
-                return NULL;
+            raise_FastqFormatError(
+                PyUnicode_FromFormat(
+                    "Line expected to start with '@' but found '%c'", 
+                    self->record_start[0]),
+                self->number_of_records * 4
+            );
+            return NULL;
         }
 
         if (second_header_start[0] != '+') {
-            PyErr_Format(
-                FastqFormatError, 
-                "Line expected to start with '+' but found '%c'", 
-                second_header_start[0]);
-                return NULL;
+            raise_FastqFormatError(
+                PyUnicode_FromFormat( 
+                    "Line expected to start with '+' but found '%c'", 
+                    second_header_start[0]),
+                self->number_of_records * 4 + 2
+            );
+            return NULL;
         }
 
         name_start = self->record_start + 1;  // skip @
@@ -753,19 +783,25 @@ FastqIter_next(FastqIter * self) {
 
         if (second_header_length) {
             if ((name_length != second_header_length) || memcmp(second_header_start, name_start, second_header_length) !=0) {
-                PyErr_Format(FastqFormatError, 
-                            "Sequence descriptions don't match (%R != %R).\n"
-                            "The second sequence header must be either empty or equal "
-                            "to the first description",
-                            PyUnicode_DecodeASCII(name_start, name_length, "strict"),
-                            PyUnicode_DecodeASCII(second_header_start, second_header_length, "strict")
-                            );
+                raise_FastqFormatError(
+                    PyUnicode_FromFormat(
+                        "Sequence descriptions don't match (%R != %R).\n"
+                        "The second sequence header must be either empty or equal "
+                        "to the first description",
+                        PyUnicode_DecodeASCII(name_start, name_length, "strict"),
+                        PyUnicode_DecodeASCII(second_header_start, second_header_length, "strict")
+                    ),
+                    self->number_of_records * 4 + 2
+                );
                 return NULL;
             }
         }
 
         if (sequence_length != qualities_length) {
-            PyErr_SetString(FastqFormatError, "Length of sequence and qualities differ");
+            raise_FastqFormatError(
+                PyUnicode_FromString("Length of sequence and qualities differ"),
+                self->number_of_records * 4 + 3
+            );
             return NULL;
         }
 
@@ -825,7 +861,11 @@ PyInit__core(void)
 {
     PyObject *m;
 
-    FastqFormatError = PyErr_NewException("_core.FastqFormatError", NULL, NULL);
+    PyObject *exceptions_module = PyImport_ImportModule("dnaio.exceptions");
+    if (exceptions_module == NULL) {
+        return NULL;
+    }
+    FastqFormatError = PyObject_GetAttrString(exceptions_module, "FastqFormatError");
 
     m = PyModule_Create(&_core_module);
     if (m == NULL)
