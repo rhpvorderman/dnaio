@@ -1161,6 +1161,6 @@ PyInit__core(void)
     if (PyModule_AddObject(m, "FastqIter", (PyObject *)FastqIterType) !=0) {
         return NULL;
     }
-    // Placeholders
+
     return m;
 }
