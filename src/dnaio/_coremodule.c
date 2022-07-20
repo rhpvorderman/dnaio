@@ -82,7 +82,7 @@ PyDoc_STRVAR(SequenceRecord__init____doc__,
 "The readers returned by `dnaio.open` yield objects of this type\n"
 "when mode is set to ``\"r\"``\n"
 "\n"
-"Attributes:"
+"Attributes:\n"
 "    name (str): The read header\n"
 "    sequence (str): The nucleotide (or amino acid) sequence\n"
 "    qualities (str): None if no quality values are available\n"
