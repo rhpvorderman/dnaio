@@ -907,8 +907,83 @@ record_names_match(PyObject *module, PyObject *args, PyObject *kwargs)
 }
 
 
+PyDoc_STRVAR(records_are_mates__doc__,
+"Check if the provided `SequenceRecord` objects are all mates of each other by\n"
+"comparing their record IDs.\n"
+"Accepts two or more `SequenceRecord` objects.\n"
+"\n"
+"This is the same as `SequenceRecord.is_mate` in the case of only two records,\n"
+"but allows for for cases where information is split into three records or more\n"
+"(such as UMI, R1, R2 or index, R1, R2).\n"
+"\n"
+"If there are only two records to check, prefer `SequenceRecord.is_mate`.\n"
+"\n"
+"Example usage::\n"
+"\n"
+"    for records in zip(*all_my_fastq_readers):\n"
+"        if not records_are_mates(*records):\n"
+"            raise MateError(f\"IDs do not match for {records}\")\n"
+"\n"
+"Args:\n"
+"    *args: two or more `~dnaio.SequenceRecord` objects\n"
+"\n"
+"Returns: True or False\n"
+);
+
+#define RECORDS_ARE_MATES_METHODDEF \
+    {"records_are_mates", (PyCFunction)(void(*)(void))records_are_mates, \
+     METH_FASTCALL, records_are_mates__doc__}
+
+static PyObject *
+records_are_mates(PyObject *module, PyObject *const *args, Py_ssize_t nargs) {
+    if (nargs < 2) {
+        PyErr_SetString(
+            PyExc_TypeError, 
+            "records_are_mates requires at least two arguments");
+        return NULL;
+    }
+    PyTypeObject *seqrecord_type = (PyTypeObject *)(&SequenceRecord_Type);
+
+    PyObject *first = args[0];
+    if (Py_TYPE(first) != seqrecord_type) {
+        PyErr_Format(
+            PyExc_TypeError, 
+            "%R is not a SequenceRecord object",
+            first);
+        return NULL;
+    }
+    SequenceRecord *first_seq = (SequenceRecord *)first;
+    PyObject *first_name_obj = first_seq->name;
+    char *first_name = PyUnicode_DATA(first_name_obj);
+    size_t first_id_length = strcspn(first_name, " \t");
+    char first_id_end = first_name[first_id_length - 1];
+    int first_id_ends_with_number = first_id_end >= '1' && first_id_end <= '3';
+    int are_mates = 1;
+
+    for (Py_ssize_t i=1; i<nargs; i++) {
+        PyObject *other = args[i];
+        if (Py_TYPE(other) != seqrecord_type) {
+            PyErr_Format(
+                PyExc_TypeError, 
+                "%R is not a SequenceRecord object",
+                other);
+        return NULL;
+        }
+        SequenceRecord *other_seq = (SequenceRecord *)other;
+        PyObject *other_name_obj = other_seq->name;
+        char *other_name = PyUnicode_DATA(other_name_obj);
+        size_t other_name_length = PyUnicode_GET_LENGTH(other_name_obj);
+        are_mates &= record_ids_match_partial(
+            first_name, other_name, first_id_length, other_name_length, 
+            first_id_ends_with_number);
+    }
+    return PyBool_FromLong(are_mates);
+}
+
+
 static PyMethodDef _core_methods[] = {
     RECORD_NAMES_MATCH_METHODDEF,
+    RECORDS_ARE_MATES_METHODDEF,
 };
 
 static struct PyModuleDef _core_module = {
