@@ -576,7 +576,10 @@ raise_FastqFormatError(PyObject *message, Py_ssize_t line) {
     } else {
         line_obj = PyLong_FromSsize_t(line);
     }
-    PyObject *err = PyObject_CallFunctionObjArgs(FastqFormatError, message, line_obj);
+    PyObject *args = PyTuple_New(2);
+    PyTuple_SET_ITEM(args, 0, message);
+    PyTuple_SET_ITEM(args, 1, line_obj);
+    PyObject *err = PyObject_CallObject(FastqFormatError, args);
     PyErr_SetNone(err);
 }
 
