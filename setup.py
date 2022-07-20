@@ -11,7 +11,9 @@ else:
 setup(
     ext_modules=[
         Extension(
-            "dnaio._core", sources=["src/dnaio/_coremodule.c"], define_macros=DEFINE_MACROS
+            "dnaio._core",
+            sources=["src/dnaio/_coremodule.c"],
+            define_macros=DEFINE_MACROS,
         ),
     ],
 )
