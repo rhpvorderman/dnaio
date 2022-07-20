@@ -900,6 +900,12 @@ FastqIter_next(FastqIter * self) {
     }
 }
 
+static PyMemberDef FastqIter_members[] = {
+    {"number_of_records", T_PYSSIZET, offsetof(FastqIter, number_of_records), 
+     READONLY, NULL},
+    {NULL},
+};
+
 
 static PyTypeObject FastqIter_Type = {
     PyVarObject_HEAD_INIT(NULL, 0)
@@ -910,6 +916,7 @@ static PyTypeObject FastqIter_Type = {
     .tp_new = Fastqiter__new__,
     .tp_iter = FastqIter_iter,
     .tp_iternext = (iternextfunc)FastqIter_next,
+    .tp_members = FastqIter_members,
 };
 
 
