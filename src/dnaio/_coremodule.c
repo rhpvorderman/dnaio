@@ -860,6 +860,71 @@ static PyTypeObject FastqIter_Type = {
 };
 
 
+PyDoc_STRVAR(paired_fastq_heads__doc__,
+"Skip forward in the two buffers by multiples of four lines.\n"
+"\n"
+"Return a tuple (length1, length2) such that buf1[:length1] and\n"
+"buf2[:length2] contain the same number of lines (where the\n"
+"line number is divisible by four).\n"
+);
+
+#define PAIRED_FASTQ_HEADS_METHODDEF \
+    {"paired_fastq_heads", (PyCFunction)(void(*)(void))paired_fastq_heads, \
+     METH_VARARGS | METH_KEYWORDS, paired_fastq_heads__doc__}
+
+static PyObject *
+paired_fastq_heads(PyObject *module, PyObject *args, PyObject *kwargs)
+{
+    char *keywords[] = {"buf1", "buf2", "end1", "end2", NULL};
+    char *format = "y*y*nn|:paired_fastq_heads";
+    Py_buffer buf1;
+    Py_buffer buf2;
+    Py_ssize_t end1;
+    Py_ssize_t end2;
+    if (!PyArg_ParseTupleAndKeywords(
+            args, kwargs, format, keywords,
+            &buf1, &buf2, &end1, &end2)) {
+        return NULL;
+    }
+    Py_ssize_t linebreaks = 0;
+    char *data1 = buf1.buf;
+    char *data2 = buf2.buf;
+    char *data1_end = data1 + Py_MIN(end1, buf1.len);
+    char *data2_end = data2 + Py_MIN(end2, buf2.len);
+    char *pos1 = data1;
+    char *pos2 = data2;
+    char *record_start1 = data1;
+    char *record_start2 = data2;
+
+    while (1) {
+        pos1 = memchr(pos1, '\n', data1_end - pos1);
+        if (pos1 == NULL) 
+            break;
+        pos1 += 1;
+        pos2 = memchr(pos2, '\n', data2_end - pos2);
+        if (pos2 == NULL) 
+            break;
+        pos2 += 1;
+        linebreaks += 1;
+        if (linebreaks == 4) {
+            linebreaks = 0;
+            record_start1 = pos1;
+            record_start2 = pos2;
+        }
+    }
+    // Hit the end of the data block
+    // This code will always be reached, so the buffers are always safely released.
+    PyBuffer_Release(&buf1);
+    PyBuffer_Release(&buf2);
+    PyObject *record_end1 = PyLong_FromSize_t(record_start1 - data1);
+    PyObject *record_end2 = PyLong_FromSize_t(record_start2 - data2);
+    PyObject *retval = PyTuple_New(2);
+    PyTuple_SET_ITEM(retval, 0, record_end1);
+    PyTuple_SET_ITEM(retval, 1, record_end2);
+    return retval;
+}
+
+
 PyDoc_STRVAR(record_names_match__doc__,
 "Check whether the sequence record ids id1 and id2 are compatible, ignoring a\n"
 "suffix of '1', '2' or '3'. This exception allows to check some old\n"
@@ -984,6 +1049,7 @@ records_are_mates(PyObject *module, PyObject *const *args, Py_ssize_t nargs) {
 static PyMethodDef _core_methods[] = {
     RECORD_NAMES_MATCH_METHODDEF,
     RECORDS_ARE_MATES_METHODDEF,
+    PAIRED_FASTQ_HEADS_METHODDEF,
     {NULL},
 };
 
@@ -1036,6 +1102,5 @@ PyInit__core(void)
         return NULL;
     }
     // Placeholders
-    PyModule_AddObject(m, "paired_fastq_heads", Py_None);
     return m;
 }
