@@ -860,13 +860,65 @@ static PyTypeObject FastqIter_Type = {
 };
 
 
+PyDoc_STRVAR(record_names_match__doc__,
+"Check whether the sequence record ids id1 and id2 are compatible, ignoring a\n"
+"suffix of '1', '2' or '3'. This exception allows to check some old\n"
+"paired-end reads that have IDs ending in '/1' and '/2'. Also, the\n"
+"fastq-dump tool (used for converting SRA files to FASTQ) appends '.1', '.2\n"
+"and sometimes '.3' to paired-end reads if option -I is used.\n"
+"\n"
+"\nDeprecated, use `SequenceRecord.is_mate` instead\n");
+
+#define RECORD_NAMES_MATCH_METHODDEF \
+    {"record_names_match", (PyCFunction)(void(*)(void))record_names_match, \
+     METH_VARARGS | METH_KEYWORDS, record_names_match__doc__}
+
+static PyObject *
+record_names_match(PyObject *module, PyObject *args, PyObject *kwargs) 
+{
+    PyObject *header1 = NULL;
+    PyObject *header2 = NULL;
+    char *keywords[] = {"header1", "header2", NULL};
+    if (!PyArg_ParseTupleAndKeywords(
+            args, kwargs, "O!O!|:record_names_match", keywords,
+            &PyUnicode_Type, &header1,
+            &PyUnicode_Type, &header2)) {
+        return NULL;
+    }
+    if (!PyUnicode_IS_COMPACT_ASCII(header1)) {
+        PyErr_SetString(
+            PyExc_ValueError, 
+            "header1 must be a valid ASCII-string."
+        );
+        return NULL;
+    }
+    if (!PyUnicode_IS_COMPACT_ASCII(header2)) {
+        PyErr_SetString(
+            PyExc_ValueError, 
+            "header2 must be a valid ASCII-string."
+        );
+        return NULL;
+    }
+    char *header1chars = PyUnicode_DATA(header1);
+    char *header2chars = PyUnicode_DATA(header2); 
+    size_t header1_length = PyUnicode_GET_LENGTH(header1);
+    return PyBool_FromLong(
+        record_ids_match(header1chars, header2chars, header1_length));
+}
+
+
+static PyMethodDef _core_methods[] = {
+    RECORD_NAMES_MATCH_METHODDEF,
+};
+
 static struct PyModuleDef _core_module = {
     PyModuleDef_HEAD_INIT,
     "_core",   /* name of module */
     NULL, /* module documentation, may be NULL */
     -1,
-    NULL  /* module methods */
+    _core_methods  /* module methods */
 };
+
 
 
 PyMODINIT_FUNC
