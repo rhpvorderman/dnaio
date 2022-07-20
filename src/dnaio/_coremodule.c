@@ -143,11 +143,7 @@ SequenceRecord__new__(PyTypeObject *tp, PyObject *args, PyObject *kwargs)
     }
     Py_INCREF(name);
     Py_INCREF(sequence);
-    SequenceRecord * self = PyObject_New(SequenceRecord, tp);
-    self->name = name;
-    self->sequence=sequence;
-    self->qualities=qualities;
-    return (PyObject *)self;
+    return new_sequence_record(name, sequence, qualities);
 };
 
 // GETTERS AND SETTERS
