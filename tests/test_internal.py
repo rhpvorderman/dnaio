@@ -634,46 +634,6 @@ def test_fastq_writer_repr(tmp_path):
         repr(fw)
 
 
-class TestAsciiCheck:
-    from dnaio._core import bytes_ascii_check
-
-    ASCII_STRING = (
-        "In het Nederlands komen bijzondere leestekens niet vaak voor.".encode("ascii")
-    )
-    # NON-ASCII from the German wikipedia.
-    NON_ASCII_STRING = (
-        "In späterer Zeit trat Umlaut sehr häufig analogisch ein.".encode("latin-1")
-    )
-
-    def test_ascii(self):
-        assert self.bytes_ascii_check(self.ASCII_STRING)
-
-    def test_ascii_all_chars(self):
-        assert self.bytes_ascii_check(bytes(range(128)))
-        assert not self.bytes_ascii_check(bytes(range(129)))
-
-    def test_non_ascii(self):
-        assert not self.bytes_ascii_check(self.NON_ASCII_STRING)
-
-    def test_non_ascii_lengths(self):
-        # Make sure that the function finds the non-ascii byte correctly for
-        # all lengths.
-        non_ascii_char = "é".encode("latin-1")
-        for i in range(len(self.ASCII_STRING)):
-            test_string = self.ASCII_STRING[:i] + non_ascii_char
-            assert not self.bytes_ascii_check(test_string)
-
-    def test_ascii_lengths(self):
-        # Make sure the ascii check is correct even though there are non-ASCII
-        # bytes directly behind the search space.
-        # This ensures there is no overshoot where the algorithm checks bytes
-        # after the search space.
-        non_ascii_char = "é".encode("latin-1")
-        for i in range(1, len(self.ASCII_STRING) + 1):
-            test_string = self.ASCII_STRING[:i] + (non_ascii_char * 8)
-            assert self.bytes_ascii_check(test_string, i - 1)
-
-
 class TestRecordsAreMates:
     def test_records_are_mates(self):
         assert records_are_mates(
