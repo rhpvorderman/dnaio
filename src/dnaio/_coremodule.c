@@ -8,24 +8,35 @@
 #endif
 
 static inline int 
-record_ids_match(char * header1, char * header2,
-size_t header1_length) {
-    size_t id2_length = strcspn(header2, " \t");
-    if (header1_length < id2_length) {
+record_ids_match_partial(
+    char * header1, char * header2,
+    size_t id1_length, size_t header2_length,
+    int id1_ends_with_number) 
+{
+    if (header2_length < id1_length) {
         return 0;
     }
-    char end = header1[id2_length];
+    char end = header2[id1_length];
     if ((end != 0) && (end != ' ') && (end != '\t')) {
         return 0;
     }
-    char header1lastchar = header1[id2_length - 1];
-    char header2lastchar = header2[id2_length - 1];
-    int id1endswithnumber = (header1lastchar >= '1') && (header1lastchar <= '3');
-    int id2endswithnumber = (header2lastchar >= '1') && (header2lastchar <= '3');
-    if (id1endswithnumber && id2endswithnumber) {
-        id2_length -= 1;
+    char header2lastchar = header2[id1_length - 1];
+    int id2_ends_with_number = (header2lastchar >= '1') && (header2lastchar <= '3');
+    if (id1_ends_with_number && id2_ends_with_number) {
+        id1_length -= 1;
     }
-    return (memcmp(header1, header2, id2_length) == 0);
+    return (memcmp(header1, header2, id1_length) == 0);
+}
+
+static inline int 
+record_ids_match(char *header1, char *header2,
+                 size_t header1_length) 
+{
+    size_t id2_length = strcspn(header2, " \t");
+    char id2_end = header2[id2_length - 1];
+    int id2_ends_with_number = (id2_end >= '1') && (id2_end <= '3');
+    return record_ids_match_partial(header2, header1, id2_length, 
+                                    header1_length, id2_ends_with_number);
 }
 
 typedef struct {
@@ -847,7 +858,6 @@ static PyTypeObject FastqIter_Type = {
     .tp_iter = FastqIter_iter,
     .tp_iternext = (iternextfunc)FastqIter_next,
 };
-
 
 
 static struct PyModuleDef _core_module = {
