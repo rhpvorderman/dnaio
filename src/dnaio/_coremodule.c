@@ -6,6 +6,7 @@
 #else
     #include "ascii_check.h"
 #endif
+#include "_conversions.h"
 
 static inline int 
 record_ids_match_partial(
@@ -452,11 +453,63 @@ SequenceRecord_is_mate(SequenceRecord *self, SequenceRecord *other)
         record_ids_match(header1_chars, header2_chars, header1_length));
 }
 
+PyDoc_STRVAR(SequenceRecord_reverse_complement__doc__,
+"Return the reverse complement of this record."
+);
+
+#define SEQUENCE_REVERSE_COMPLEMENT_METHODDEF \
+    {"reverse_complement", (PyCFunction)(void(*)(void))SequenceRecord_reverse_complement, \
+     METH_NOARGS, SequenceRecord_reverse_complement__doc__}
+
+static PyObject *
+SequenceRecord_reverse_complement(SequenceRecord *self, PyObject *Py_UNUSED(noargs)) 
+{
+    Py_ssize_t sequence_length = PyUnicode_GET_LENGTH(self->sequence);
+    PyObject *reversed_sequence_obj = PyUnicode_New(sequence_length, 127);
+    PyObject *reversed_qualities_obj = NULL;
+    if (reversed_sequence_obj == NULL) {
+        return PyErr_NoMemory();
+    }
+    char *reversed_sequence = PyUnicode_DATA(reversed_sequence_obj);
+    char *sequence = PyUnicode_DATA(self->sequence);
+    unsigned char nucleotide;
+
+    Py_ssize_t reverse_cursor = sequence_length;
+    Py_ssize_t cursor;
+    for (cursor = 0; cursor < sequence_length; cursor += 1) {
+        reverse_cursor -= 1;
+        nucleotide = sequence[cursor];
+        reversed_sequence[reverse_cursor] = NUCLEOTIDE_COMPLEMENTS[nucleotide];
+    }
+    
+    if (self->qualities != NULL) {
+        reverse_cursor = sequence_length;
+        reversed_qualities_obj = PyUnicode_New(sequence_length, 127);
+        if (reversed_qualities_obj == NULL) {
+            Py_DECREF(reversed_sequence_obj);
+            return PyErr_NoMemory();
+        }
+        char *reversed_qualities = PyUnicode_DATA(reversed_qualities_obj);
+        char *qualities = PyUnicode_DATA(self->qualities);
+        for (cursor = 0; cursor < sequence_length; cursor += 1) {
+            reverse_cursor -= 1;
+            reversed_qualities[reverse_cursor] = qualities[cursor];
+        }
+    }
+    else {
+        reversed_qualities_obj = NULL;
+    }
+    Py_INCREF(self->name);
+    return new_sequence_record(self->name, reversed_sequence_obj, reversed_qualities_obj);
+    
+}
+
 static PyMethodDef SequenceRecord_methods[] = {
     SEQUENCE_FASTQ_BYTES_METHODDEF,
     SEQUENCE_FASTQ_BYTES_TWO_HEADERS_METHODDEF,
     SEQUENCE_QUALITIES_AS_BYTES_METHODDEF,
     SEQUENCERECORD_IS_MATE_METHODDEF,
+    SEQUENCE_REVERSE_COMPLEMENT_METHODDEF,
     {NULL}
 };
 
