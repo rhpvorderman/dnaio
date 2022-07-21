@@ -566,17 +566,22 @@ static PyTypeObject SequenceRecord_Type = {
 typedef struct {
     PyObject_HEAD
     Py_ssize_t buffer_size;
-    char * buffer;
+    char *buffer;
     Py_ssize_t bytes_in_buffer;
-    PyObject * sequence_class;
+    PyObject *sequence_class;
     int use_custom_class;
     int extra_newline;
     int yielded_two_headers;
+    int two_headers;
     int eof;
-    PyObject * file;
-    PyObject * read_method;
+    PyObject *file;
+    PyObject *read_method;
     char * record_start;
     Py_ssize_t number_of_records;
+    PyObject **records_storage;
+    size_t records_storage_size;
+    size_t records_stored;
+    size_t records_index;
 } FastqIter;
 
 static void 
@@ -585,6 +590,7 @@ FastqIter_dealloc(FastqIter *self) {
     Py_CLEAR(self->sequence_class);
     Py_CLEAR(self->read_method);
     PyMem_Free(self->buffer);
+    PyMem_Free(self->records_storage);
     Py_TYPE(self)->tp_free((PyObject *)self);
 }
 
@@ -615,6 +621,10 @@ Fastqiter__new__(PyTypeObject *subtype, PyObject *args, PyObject *kwargs) {
     if (self->buffer == NULL) {
       return PyErr_NoMemory();
     }
+    self->records_storage_size = 128;
+    self->records_storage = PyMem_Malloc(self->records_storage_size * sizeof(PyObject *));
+    self->records_stored = 0;
+    self->records_index = 0;
     self->record_start = self->buffer;
     self->bytes_in_buffer = 0;
     Py_INCREF(sequence_class);
@@ -623,7 +633,9 @@ Fastqiter__new__(PyTypeObject *subtype, PyObject *args, PyObject *kwargs) {
     self->number_of_records = 0;
     self->extra_newline = 0; 
     self->yielded_two_headers = 0;
+    self->two_headers = 0;
     self->eof = 0;
+
     Py_INCREF(file);
     self->file = file;
     self->read_method = PyUnicode_FromString("read");
@@ -743,15 +755,15 @@ FastqIter__read_into_buffer(FastqIter *self) {
     return 0;
 }
 
-static PyObject * 
-FastqIter_iter(PyObject * self){
-    Py_INCREF(self);
-    return self;
-}
 
-static PyObject *
-FastqIter_next(FastqIter * self) {
-    PyObject * retval;
+#define PARSE_RECORDS_EOF 1
+#define PARSE_RECORDS_BUFFER_END 0;
+#define PARSE_RECORDS_ERROR -1
+
+static int 
+FastqIter__parse_records_in_buffer(FastqIter *self) 
+{
+    PyObject *seqrecord;
     PyObject * name;
     PyObject * sequence;
     PyObject * qualities;
@@ -770,42 +782,28 @@ FastqIter_next(FastqIter * self) {
     while (1) {
         buffer_end = self->buffer + self->bytes_in_buffer;
         if (self->eof) {
-            PyErr_SetNone(PyExc_StopIteration);
-            return NULL;
+            return PARSE_RECORDS_EOF;
         }
         name_end = memchr(self->record_start, '\n', (buffer_end - self->record_start));
         if (name_end == NULL) {
-            if (FastqIter__read_into_buffer(self) != 0) {
-              return NULL;
-            }
-            continue;
+            return PARSE_RECORDS_BUFFER_END;
         }
-        
         sequence_start = name_end + 1;
         sequence_end = memchr(sequence_start, '\n', (buffer_end - sequence_start));
         if (sequence_end == NULL) {
-            if (FastqIter__read_into_buffer(self) != 0) {
-                return NULL;
-            }
-            continue;
+            return PARSE_RECORDS_BUFFER_END;
         }
         
         second_header_start = sequence_end + 1;
         second_header_end = memchr(second_header_start, '\n', (buffer_end - second_header_start));
         if (second_header_end == NULL) {
-            if (FastqIter__read_into_buffer(self) != 0) {
-                return NULL;
-            }
-            continue;
+            return PARSE_RECORDS_BUFFER_END;
         }
 
         qualities_start = second_header_end + 1;
         qualities_end = memchr(qualities_start, '\n', (buffer_end - qualities_start));
         if (qualities_end == NULL) {
-            if (FastqIter__read_into_buffer(self) != 0) {
-                return NULL;
-            }
-            continue;
+            return PARSE_RECORDS_BUFFER_END;
         }
 
         if (self->record_start[0] != '@') {
@@ -813,9 +811,9 @@ FastqIter_next(FastqIter * self) {
                 PyUnicode_FromFormat(
                     "Line expected to start with '@' but found '%c'", 
                     self->record_start[0]),
-                self->number_of_records * 4
+                (self->number_of_records + self->records_stored) * 4
             );
-            return NULL;
+            return PARSE_RECORDS_ERROR;
         }
 
         if (second_header_start[0] != '+') {
@@ -823,9 +821,9 @@ FastqIter_next(FastqIter * self) {
                 PyUnicode_FromFormat( 
                     "Line expected to start with '+' but found '%c'", 
                     second_header_start[0]),
-                self->number_of_records * 4 + 2
+                (self->number_of_records + self->records_stored) * 4 + 2
             );
-            return NULL;
+            return PARSE_RECORDS_ERROR;
         }
 
         name_start = self->record_start + 1;  // skip @
@@ -859,47 +857,99 @@ FastqIter_next(FastqIter * self) {
                         PyUnicode_DecodeASCII(name_start, name_length, "strict"),
                         PyUnicode_DecodeASCII(second_header_start, second_header_length, "strict")
                     ),
-                    self->number_of_records * 4 + 2
+                    (self->number_of_records + self->records_stored) * 4 + 2
                 );
-                return NULL;
+                return PARSE_RECORDS_ERROR;
             }
         }
 
         if (sequence_length != qualities_length) {
             raise_FastqFormatError(
                 PyUnicode_FromString("Length of sequence and qualities differ"),
-                self->number_of_records * 4 + 3
+                (self->number_of_records + self->records_stored) * 4 + 3
             );
-            return NULL;
+            return PARSE_RECORDS_ERROR;
         }
 
-        if ((self->number_of_records == 0) && !(self->yielded_two_headers)) {
-            self->yielded_two_headers = 1;
-            return PyBool_FromLong(second_header_length);
+        if (self->number_of_records == 0) {
+            self->two_headers = second_header_length;
         }
         
         name = PyUnicode_New(name_length, 127);
         sequence = PyUnicode_New(sequence_length, 127);
         qualities = PyUnicode_New(qualities_length, 127);
         if ((name == NULL) || (sequence == NULL) || (qualities == NULL)) {
-            return PyErr_NoMemory();
+            PyErr_NoMemory();
+            return PARSE_RECORDS_ERROR;
         }
         memcpy(PyUnicode_DATA(name), name_start, name_length);
         memcpy(PyUnicode_DATA(sequence), sequence_start, sequence_length);
         memcpy(PyUnicode_DATA(qualities), qualities_start, qualities_length);
 
         if (self->use_custom_class) {
-            retval = PyObject_CallFunctionObjArgs(self->sequence_class, name, sequence, qualities);
+            seqrecord = PyObject_CallFunctionObjArgs(self->sequence_class, name, sequence, qualities);
         }
         else {
-            retval = new_sequence_record(name, sequence, qualities);
+            seqrecord = new_sequence_record(name, sequence, qualities);
         }
-
-        self->number_of_records += 1; 
+        if (self->records_stored == self->records_storage_size) {
+            size_t new_size = self->records_storage_size * 2;
+            PyObject **tmp = PyMem_Realloc(self->records_storage, new_size);
+            if (tmp == NULL) {
+                PyErr_NoMemory();
+                return PARSE_RECORDS_ERROR;
+            }
+            self->records_storage = tmp;
+            self->records_storage_size = new_size; 
+        }
+        self->records_storage[self->records_stored] = seqrecord;
+        self->records_stored += 1;
         self->record_start = qualities_end + 1;
-        return retval;
     }
 }
+
+static PyObject * 
+FastqIter_iter(PyObject *self){
+    Py_INCREF(self);
+    return self;
+}
+
+static PyObject *
+FastqIter_next(FastqIter *self) {
+    int ret = 0;
+    if (self->records_index == self->records_stored) {
+        self->records_index = 0;
+        self->records_stored = 0;
+        while (1) { // Keep going until at least one record is stored
+            ret = FastqIter__read_into_buffer(self);
+            if (ret < 0) {
+                return NULL;
+            }
+            ret = FastqIter__parse_records_in_buffer(self);
+            if (ret < 0) {
+                return NULL;
+            } 
+            if (self->records_stored) {
+                break;
+            }
+            if (ret == PARSE_RECORDS_EOF) {
+                PyErr_SetNone(PyExc_StopIteration);
+                return NULL;
+            }
+            // No records stored, no errors, the FASTQ record must not have 
+            // fit within the buffer.
+        }
+    }
+    if (!self->yielded_two_headers) {
+        self->yielded_two_headers = 1;
+        return PyBool_FromLong(self->two_headers);
+    }
+    PyObject *retval = self->records_storage[self->records_index];
+    self->records_index += 1;
+    self->number_of_records += 1;
+    return retval;
+}
+
 
 static PyMemberDef FastqIter_members[] = {
     {"number_of_records", T_PYSSIZET, offsetof(FastqIter, number_of_records), 
