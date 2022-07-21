@@ -894,7 +894,7 @@ FastqIter__parse_records_in_buffer(FastqIter *self)
         }
         if (self->records_stored == self->records_storage_size) {
             size_t new_size = self->records_storage_size * 2;
-            PyObject **tmp = PyMem_Realloc(self->records_storage, new_size);
+            PyObject **tmp = PyMem_Realloc(self->records_storage, new_size * sizeof(PyObject *));
             if (tmp == NULL) {
                 PyErr_NoMemory();
                 return PARSE_RECORDS_ERROR;
