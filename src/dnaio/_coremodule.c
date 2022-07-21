@@ -10,7 +10,7 @@
 
 static inline int 
 record_ids_match_partial(
-    char * header1, char * header2,
+    char *header1, char *header2,
     size_t id1_length, size_t header2_length,
     int id1_ends_with_number) 
 {
@@ -42,9 +42,9 @@ record_ids_match(char *header1, char *header2,
 
 typedef struct {
     PyObject_HEAD
-    PyObject * name;
-    PyObject * sequence;
-    PyObject * qualities;
+    PyObject *name;
+    PyObject *sequence;
+    PyObject *qualities;
 } SequenceRecord;
 
 static void 
@@ -99,8 +99,8 @@ SequenceRecord__new__(PyTypeObject *tp, PyObject *args, PyObject *kwargs)
     PyObject *name = NULL;
     PyObject *sequence = NULL;
     PyObject *qualities = NULL;
-    static char * _keywords[] = {"name", "sequence", "qualities", NULL};
-    static char * _format = "O!O!|O:SequenceRecord";
+    static char *_keywords[] = {"name", "sequence", "qualities", NULL};
+    static char *_format = "O!O!|O:SequenceRecord";
     if (!PyArg_ParseTupleAndKeywords(
         args, kwargs, _format, _keywords,
         (PyObject *)&PyUnicode_Type, &name,
@@ -188,7 +188,7 @@ SequenceRecord_set_name(SequenceRecord *self, PyObject *value, void *closure)
         PyErr_SetString(PyExc_ValueError, "name must be a valid ASCII-string.");
         return -1;
     }
-    PyObject * tmp = self->name;
+    PyObject *tmp = self->name;
     Py_INCREF(value);
     self->name = value;
     Py_DECREF(tmp);
@@ -212,7 +212,7 @@ SequenceRecord_set_sequence(SequenceRecord *self, PyObject *value, void *closure
         PyErr_SetString(PyExc_ValueError, "sequence must be a valid ASCII-string.");
         return -1;
     }
-    PyObject * tmp = self->sequence;
+    PyObject *tmp = self->sequence;
     Py_INCREF(value);
     self->sequence = value;
     Py_DECREF(tmp);
@@ -222,7 +222,7 @@ SequenceRecord_set_sequence(SequenceRecord *self, PyObject *value, void *closure
 static int
 SequenceRecord_set_qualities(SequenceRecord *self, PyObject *value, void *closure)
 {
-    PyObject * tmp;
+    PyObject *tmp;
     if (value == NULL){
         PyErr_SetString(PyExc_AttributeError, "qualities attribute cannot be deleted.");
         return -1;
@@ -259,8 +259,8 @@ static PyGetSetDef SequenceRecord_properties[] = {
 
 // METHODS
 
-static PyObject * 
-SequenceRecord__repr__(SequenceRecord * self){
+static PyObject *
+SequenceRecord__repr__(SequenceRecord *self){
     if (self->qualities == NULL) {
         return PyUnicode_FromFormat(
             "SequenceRecord(%R, %R)", self->name, self->sequence);
@@ -270,7 +270,7 @@ SequenceRecord__repr__(SequenceRecord * self){
 }
 
 static int 
-SequenceRecord_equals(SequenceRecord * self, SequenceRecord * other)
+SequenceRecord_equals(SequenceRecord *self, SequenceRecord *other)
 {
     if (self->qualities == NULL) {
         if (other->qualities != NULL) {
@@ -334,7 +334,7 @@ SequenceRecord_fastq_bytes(SequenceRecord *self,
                           nargs + nkwargs);
                 return NULL;
             }
-            PyObject * argname = PyTuple_GET_ITEM(kwnames, 0);
+            PyObject *argname = PyTuple_GET_ITEM(kwnames, 0);
             if (strcmp(PyUnicode_DATA(argname), "two_headers") != 0) {
                 PyErr_Format(PyExc_TypeError, "fastq_bytes() got an unexpected keyword argument %R", argname);
                 return NULL;
@@ -350,9 +350,9 @@ SequenceRecord_fastq_bytes(SequenceRecord *self,
     Py_ssize_t sequence_length = PyUnicode_GET_LENGTH(self->sequence);
     Py_ssize_t qualities_length = PyUnicode_GET_LENGTH(self->qualities);
    
-    char * name = PyUnicode_DATA(self->name);
-    char * sequence = PyUnicode_DATA(self->sequence);
-    char * qualities = PyUnicode_DATA(self->qualities);
+    char *name = PyUnicode_DATA(self->name);
+    char *sequence = PyUnicode_DATA(self->sequence);
+    char *qualities = PyUnicode_DATA(self->qualities);
 
     // Total size is name + sequence + qualities + 4 newlines + '+' and an
     // '@' to be put in front of the name.
@@ -363,11 +363,11 @@ SequenceRecord_fastq_bytes(SequenceRecord *self,
         total_size += name_length;
 
     // This is the canonical way to create an uninitialized bytestring of given size
-    PyObject * retval = PyBytes_FromStringAndSize(NULL, total_size);
+    PyObject *retval = PyBytes_FromStringAndSize(NULL, total_size);
     if (retval == NULL)
         return PyErr_NoMemory();
 
-    char * retval_ptr = PyBytes_AS_STRING(retval);
+    char *retval_ptr = PyBytes_AS_STRING(retval);
 
     // Write the sequences into the bytestring at the correct positions.
     size_t cursor;
@@ -404,7 +404,7 @@ SequenceRecord_fastq_bytes_two_headers(SequenceRecord *self, PyObject *Py_UNUSED
 {
     Py_INCREF(Py_True);
     PyObject *args[] = {Py_True};
-    PyObject * retval = SequenceRecord_fastq_bytes(self, args, (Py_ssize_t)1, NULL);
+    PyObject *retval = SequenceRecord_fastq_bytes(self, args, (Py_ssize_t)1, NULL);
     Py_DECREF(Py_True);
     return retval;
 }
@@ -439,9 +439,9 @@ SequenceRecord_is_mate(SequenceRecord *self, SequenceRecord *other)
         PyErr_SetString(PyExc_TypeError, "other must be a SequenceRecord object.");
         return NULL;
     }
-    char * header1_chars = PyUnicode_DATA(self->name);
+    char *header1_chars = PyUnicode_DATA(self->name);
     size_t header1_length = PyUnicode_GET_LENGTH(self->name);
-    char * header2_chars = PyUnicode_DATA(other->name);
+    char *header2_chars = PyUnicode_DATA(other->name);
     return PyBool_FromLong(
         record_ids_match(header1_chars, header2_chars, header1_length));
 }
@@ -513,12 +513,12 @@ SequenceRecord__len__(SequenceRecord *self) {
     return PyObject_Size(self->sequence);
 }
 
-static PyObject * 
+static PyObject *
 SequenceRecord_get_item(SequenceRecord *self, PyObject *key) 
 {
-    PyObject * qualities;
+    PyObject *qualities;
     
-    PyObject * sequence = PyObject_GetItem(self->sequence, key);
+    PyObject *sequence = PyObject_GetItem(self->sequence, key);
     if (sequence == NULL) {
         return NULL;
     }
@@ -559,16 +559,16 @@ static PyTypeObject SequenceRecord_Type = {
 typedef struct {
     PyObject_HEAD
     Py_ssize_t buffer_size;
-    char * buffer;
+    char *buffer;
     Py_ssize_t bytes_in_buffer;
-    PyObject * sequence_class;
+    PyObject *sequence_class;
     int use_custom_class;
     int extra_newline;
     int yielded_two_headers;
     int eof;
-    PyObject * file;
-    PyObject * read_method;
-    char * record_start;
+    PyObject *file;
+    PyObject *read_method;
+    char *record_start;
     Py_ssize_t number_of_records;
 } FastqIter;
 
@@ -589,8 +589,8 @@ Fastqiter__new__(PyTypeObject *subtype, PyObject *args, PyObject *kwargs) {
     PyObject *sequence_class = (PyObject *)&SequenceRecord_Type;
     Py_ssize_t buffer_size = 128 * 1024;
 
-    static char * _keywords[] = {"file", "sequence_class", "buffer_size", NULL};
-    static char * _format = "OO!n|:SequenceRecord";
+    static char *_keywords[] = {"file", "sequence_class", "buffer_size", NULL};
+    static char *_format = "OO!n|:SequenceRecord";
     if (!PyArg_ParseTupleAndKeywords(
         args, kwargs, _format, _keywords,
         &file,
@@ -602,7 +602,7 @@ Fastqiter__new__(PyTypeObject *subtype, PyObject *args, PyObject *kwargs) {
       PyErr_SetString(PyExc_ValueError, "Starting buffer size too small");
       return NULL;
     }
-    FastqIter * self = PyObject_New(FastqIter, subtype);
+    FastqIter *self = PyObject_New(FastqIter, subtype);
     self->buffer_size = buffer_size;
     self->buffer = PyMem_Malloc(buffer_size);
     if (self->buffer == NULL) {
@@ -647,7 +647,7 @@ FastqIter__read_into_buffer(FastqIter *self) {
     // starts at the start of a FASTQ record. Any incomplete FASTQ remainder
     // of the already processed buffer is moved to the start of the buffer
     // and the rest of the buffer is filled up with bytes from the file.
-    char * tmp;
+    char *tmp;
     Py_ssize_t remaining_bytes;
     if ((self->record_start == self->buffer) && self->bytes_in_buffer == self->buffer_size) {
       // Buffer too small, double it.
@@ -669,7 +669,7 @@ FastqIter__read_into_buffer(FastqIter *self) {
     self->record_start = self->buffer;
 
     Py_ssize_t empty_bytes_in_buffer = self->buffer_size - self->bytes_in_buffer;
-    PyObject * filechunk = PyObject_CallMethodObjArgs(
+    PyObject *filechunk = PyObject_CallMethodObjArgs(
       self->file, self->read_method, PyLong_FromSsize_t(empty_bytes_in_buffer), NULL);
     if (filechunk == NULL || !PyBytes_CheckExact(filechunk)) {
         PyErr_SetString(PyExc_TypeError, "self.file is not a binary file reader.");
@@ -736,27 +736,27 @@ FastqIter__read_into_buffer(FastqIter *self) {
     return 0;
 }
 
-static PyObject * 
-FastqIter_iter(PyObject * self){
+static PyObject *
+FastqIter_iter(PyObject *self){
     Py_INCREF(self);
     return self;
 }
 
 static PyObject *
-FastqIter_next(FastqIter * self) {
-    PyObject * retval;
-    PyObject * name;
-    PyObject * sequence;
-    PyObject * qualities;
-    char * buffer_end;
-    char * name_start;
-    char * name_end;
-    char * sequence_start; 
-    char * sequence_end;
-    char * second_header_start;
-    char * second_header_end;
-    char * qualities_start;
-    char * qualities_end; 
+FastqIter_next(FastqIter *self) {
+    PyObject *retval;
+    PyObject *name;
+    PyObject *sequence;
+    PyObject *qualities;
+    char *buffer_end;
+    char *name_start;
+    char *name_end;
+    char *sequence_start; 
+    char *sequence_end;
+    char *second_header_start;
+    char *second_header_end;
+    char *qualities_start;
+    char *qualities_end; 
     Py_ssize_t name_length, sequence_length, second_header_length, qualities_length;
     // Repeatedly attempt to parse the buffer until we have found a full record.
     // If an attempt fails, we read more data before retrying.
@@ -1131,7 +1131,7 @@ PyInit__core(void)
     m = PyModule_Create(&_core_module);
     if (m == NULL)
         return NULL;
-    PyTypeObject * SequenceRecordType = &SequenceRecord_Type;
+    PyTypeObject *SequenceRecordType = &SequenceRecord_Type;
     if (PyType_Ready(SequenceRecordType) != 0) { 
         return NULL;
     }
@@ -1147,7 +1147,7 @@ PyInit__core(void)
         return NULL;
     }
 
-    PyTypeObject * FastqIterType = &FastqIter_Type;
+    PyTypeObject *FastqIterType = &FastqIter_Type;
     if (PyType_Ready(FastqIterType) != 0) {
         return NULL;
     }
