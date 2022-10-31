@@ -255,12 +255,12 @@ SequenceRecord__repr__(SequenceRecord *self){
         "SequenceRecord(%R, %R, %R)", self->name, self->sequence, self->qualities);
 }
 
-static int 
+static inline int 
 SequenceRecord_equals(SequenceRecord *self, SequenceRecord *other)
 {
     // Rich compare for qualities as these can be None.
-    return (PyUnicode_RichCompare(self->name, other->name, Py_EQ) && 
-            PyUnicode_RichCompare(self->sequence, other->sequence, Py_EQ) &&
+    return (PyObject_RichCompareBool(self->name, other->name, Py_EQ) && 
+            PyObject_RichCompareBool(self->sequence, other->sequence, Py_EQ) &&
             PyObject_RichCompareBool(self->qualities, other->qualities, Py_EQ)
             );
 }
