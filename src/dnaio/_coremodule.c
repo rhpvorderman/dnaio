@@ -49,9 +49,9 @@ typedef struct {
 
 static void 
 SequenceRecord_dealloc(SequenceRecord *self) {
-    Py_CLEAR(self->name);
-    Py_CLEAR(self->sequence);
-    Py_CLEAR(self->qualities);
+    Py_DECREF(self->name);
+    Py_DECREF(self->sequence);
+    Py_DECREF(self->qualities);
     Py_TYPE(self)->tp_free((PyObject *)self);
 }
 
@@ -98,7 +98,7 @@ SequenceRecord__new__(PyTypeObject *tp, PyObject *args, PyObject *kwargs)
 {
     PyObject *name = NULL;
     PyObject *sequence = NULL;
-    PyObject *qualities = NULL;
+    PyObject *qualities = Py_None;
     static char *_keywords[] = {"name", "sequence", "qualities", NULL};
     static char *_format = "O!O!|O:SequenceRecord";
     if (!PyArg_ParseTupleAndKeywords(
@@ -116,10 +116,7 @@ SequenceRecord__new__(PyTypeObject *tp, PyObject *args, PyObject *kwargs)
         PyErr_SetString(PyExc_ValueError, "sequence must be a valid ASCII-string.");
         return NULL;
     }
-    if (qualities == Py_None) {
-        qualities = NULL;
-    }
-    if (qualities != NULL) {
+    if (qualities != Py_None) {
         if (!PyUnicode_CheckExact(qualities)) {
             PyErr_Format(
                 PyExc_TypeError, 
@@ -139,10 +136,10 @@ SequenceRecord__new__(PyTypeObject *tp, PyObject *args, PyObject *kwargs)
                 PyUnicode_GET_LENGTH(sequence), PyUnicode_GET_LENGTH(qualities));
             return NULL;
         }
-        Py_INCREF(qualities);
     }
     Py_INCREF(name);
     Py_INCREF(sequence);
+    Py_INCREF(qualities);
     return new_sequence_record(name, sequence, qualities);
 };
 
@@ -164,9 +161,6 @@ SequenceRecord_get_sequence(SequenceRecord *self, void *closure)
 static PyObject *
 SequenceRecord_get_qualities(SequenceRecord *self, void *closure)
 {
-    if (self->qualities == NULL) {
-        Py_RETURN_NONE;
-    }
     Py_INCREF(self->qualities);
     return self->qualities;
 }
@@ -227,21 +221,17 @@ SequenceRecord_set_qualities(SequenceRecord *self, PyObject *value, void *closur
         PyErr_SetString(PyExc_AttributeError, "qualities attribute cannot be deleted.");
         return -1;
     }
-    if (value == Py_None) {
-        tmp = self->qualities;
-        self->qualities = NULL;
-        Py_DECREF(tmp);
-        return 0;
-    }
-    if (!PyUnicode_CheckExact(value)) {
-        PyErr_Format(PyExc_TypeError, 
-                     "sequence must be of type str. Got %s", 
-                     Py_TYPE(value)->tp_name);
-        return -1;
-    }
-    if (!PyUnicode_IS_COMPACT_ASCII(value)) {
-        PyErr_SetString(PyExc_ValueError, "qualities must be a valid ASCII-string.");
-        return -1;
+    if (value != Py_None) {
+        if (!PyUnicode_CheckExact(value)) {
+            PyErr_Format(PyExc_TypeError, 
+                        "qualities must be of type str or None. Got %s", 
+                        Py_TYPE(value)->tp_name);
+            return -1;
+        }
+        if (!PyUnicode_IS_COMPACT_ASCII(value)) {
+            PyErr_SetString(PyExc_ValueError, "qualities must be a valid ASCII-string.");
+            return -1;
+        }
     }
     tmp = self->qualities;
     Py_INCREF(value);
@@ -261,10 +251,6 @@ static PyGetSetDef SequenceRecord_properties[] = {
 
 static PyObject *
 SequenceRecord__repr__(SequenceRecord *self){
-    if (self->qualities == NULL) {
-        return PyUnicode_FromFormat(
-            "SequenceRecord(%R, %R)", self->name, self->sequence);
-    }
     return PyUnicode_FromFormat(
         "SequenceRecord(%R, %R, %R)", self->name, self->sequence, self->qualities);
 }
@@ -272,35 +258,25 @@ SequenceRecord__repr__(SequenceRecord *self){
 static int 
 SequenceRecord_equals(SequenceRecord *self, SequenceRecord *other)
 {
-    if (self->qualities == NULL) {
-        if (other->qualities != NULL) {
-            return 0;
-        }
-    return (PyObject_RichCompareBool(self->name, other->name, Py_EQ) && 
-            PyObject_RichCompareBool(self->sequence, other->sequence, Py_EQ));
-    }
-    return (PyObject_RichCompareBool(self->name, other->name, Py_EQ) && 
-            PyObject_RichCompareBool(self->sequence, other->sequence, Py_EQ) &&
+    // Rich compare for qualities as these can be None.
+    return (PyUnicode_RichCompare(self->name, other->name, Py_EQ) && 
+            PyUnicode_RichCompare(self->sequence, other->sequence, Py_EQ) &&
             PyObject_RichCompareBool(self->qualities, other->qualities, Py_EQ)
             );
 }
 static PyObject *
-SequenceRecord__richcompare__(SequenceRecord *self, SequenceRecord *other, int op)
-{
-    // This function is extremely generic to allow subtyping, reuse etc.
+SequenceRecord__richcompare__(SequenceRecord *self, SequenceRecord *other, int op){
+    // Generic typecheck to allow subclassing.
     if(Py_TYPE(self) != Py_TYPE(other)) {
-        PyErr_Format(PyExc_TypeError, 
-            "Can only compare objects of %R to objects of the same type. Got: %R.",
-            Py_TYPE(self), Py_TYPE(other));
-        return NULL;
+        Py_RETURN_FALSE;
     }
-    if (op == Py_EQ){
-        return PyBool_FromLong(SequenceRecord_equals(self, other));
-    } else if (op == Py_NE) {
-        return PyBool_FromLong(!SequenceRecord_equals(self, other));
-    }
-    else {
-        return Py_NotImplemented;
+    switch (op) {
+        case Py_EQ: 
+            return PyBool_FromLong(SequenceRecord_equals(self, other));
+        case Py_NE:
+            return PyBool_FromLong(!SequenceRecord_equals(self, other));
+        default:
+            return Py_NotImplemented;
     }
 }
 
@@ -341,7 +317,7 @@ SequenceRecord_fastq_bytes(SequenceRecord *self,
             }
         }
     }
-    if (self->qualities == NULL) {
+    if (self->qualities == Py_None) {
         PyErr_SetString(PyExc_ValueError, 
         "Cannot create FASTQ bytes from a sequence without qualities.");
         return NULL;
@@ -475,7 +451,7 @@ SequenceRecord_reverse_complement(SequenceRecord *self, PyObject *Py_UNUSED(noar
         reversed_sequence[reverse_cursor] = NUCLEOTIDE_COMPLEMENTS[nucleotide];
     }
     
-    if (self->qualities != NULL) {
+    if (self->qualities != Py_None) {
         reverse_cursor = sequence_length;
         reversed_qualities_obj = PyUnicode_New(sequence_length, 127);
         if (reversed_qualities_obj == NULL) {
@@ -490,7 +466,8 @@ SequenceRecord_reverse_complement(SequenceRecord *self, PyObject *Py_UNUSED(noar
         }
     }
     else {
-        reversed_qualities_obj = NULL;
+        reversed_qualities_obj = Py_None;
+        Py_INCREF(reversed_qualities_obj);
     }
     Py_INCREF(self->name);
     return new_sequence_record(self->name, reversed_sequence_obj, reversed_qualities_obj);
@@ -522,8 +499,9 @@ SequenceRecord_get_item(SequenceRecord *self, PyObject *key)
     if (sequence == NULL) {
         return NULL;
     }
-    if (self->qualities == NULL) {
-        qualities = NULL;
+    if (self->qualities == Py_None) {
+        qualities = Py_None;
+        Py_INCREF(Py_None);
     } else {
         qualities = PyObject_GetItem(self->qualities, key);
         if (qualities == NULL) {
