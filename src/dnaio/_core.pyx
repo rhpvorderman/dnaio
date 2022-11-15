@@ -19,11 +19,16 @@ cdef extern from *:
     """
     #if defined(USE_SSE2)
       #include "ascii_check_sse2.h"
+      #include "newline_check_sse2.h"
     #else
       #include "ascii_check.h"
+      static inline int contains_newline(char *string, size_t length) {
+        return memchr(string, '\\n', length) != NULL;
+      }
     #endif
     """
-    int string_is_ascii(char *string, size_t length)
+    bint string_is_ascii(char *string, size_t length)
+    bint contains_newline(char *string, size_t length)
 
 cdef extern from "_conversions.h":
     const char NUCLEOTIDE_COMPLEMENTS[256]
@@ -531,17 +536,24 @@ cdef class FastqIter:
             if sequence_end == NULL:
                 self._read_into_buffer()
                 continue
+            sequence_length = sequence_end - sequence_start
+
             second_header_start = sequence_end + 1
             second_header_end = <char *>memchr(second_header_start, b'\n', <size_t>(buffer_end - second_header_start))
             if second_header_end == NULL:
                 self._read_into_buffer()
                 continue
             qualities_start = second_header_end + 1
-            qualities_end = <char *>memchr(qualities_start, b'\n', <size_t>(buffer_end - qualities_start))
-            if qualities_end == NULL:
+            if qualities_start + sequence_length > buffer_end:
                 self._read_into_buffer()
                 continue
-
+            if qualities_start[sequence_length] == b'\n' and not contains_newline(qualities_start, sequence_length):
+                qualities_end = qualities_start + sequence_length
+            else:
+                qualities_end = <char *>memchr(qualities_start, b'\n', <size_t>(buffer_end - qualities_start))
+                if qualities_end == NULL:
+                    self._read_into_buffer()
+                    continue
             if self.record_start[0] != b'@':
                 raise FastqFormatError("Line expected to "
                     "start with '@', but found {!r}".format(chr(self.record_start[0])),
@@ -554,7 +566,7 @@ cdef class FastqIter:
             name_start = self.record_start + 1  # Skip @
             second_header_start += 1  # Skip +
             name_length = name_end - name_start
-            sequence_length = sequence_end - sequence_start
+
             second_header_length = second_header_end - second_header_start
             qualities_length = qualities_end - qualities_start
 
@@ -578,7 +590,6 @@ cdef class FastqIter:
                             PyUnicode_DecodeASCII(name_start, name_length, NULL),
                             PyUnicode_DecodeASCII(second_header_start, second_header_length, NULL)),
                         line=self.number_of_records * 4 + 2)
-
             if qualities_length != sequence_length:
                 raise FastqFormatError(
                     "Length of sequence and qualities differ", line=self.number_of_records * 4 + 3)
