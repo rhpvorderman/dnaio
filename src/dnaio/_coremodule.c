@@ -736,6 +736,7 @@ FastqIter_next(FastqIter *self) {
     char *qualities_start;
     char *qualities_end; 
     Py_ssize_t name_length, sequence_length, second_header_length, qualities_length;
+    Py_ssize_t remaining_bytes;
     // Repeatedly attempt to parse the buffer until we have found a full record.
     // If an attempt fails, we read more data before retrying.
     while (1) {
@@ -762,14 +763,18 @@ FastqIter_next(FastqIter *self) {
         }
         
         second_header_start = sequence_end + 1;
-        second_header_end = memchr(second_header_start, '\n', (buffer_end - second_header_start));
-        if (second_header_end == NULL) {
-            if (FastqIter__read_into_buffer(self) != 0) {
-                return NULL;
+        remaining_bytes = buffer_end - second_header_start;
+        if ((remaining_bytes > 2) && (second_header_start[0] == '+') && (second_header_start[1] == '\n')) {
+            second_header_end = second_header_start + 1;
+        } else {
+            second_header_end = memchr(second_header_start, '\n', remaining_bytes);
+            if (second_header_end == NULL) {
+                if (FastqIter__read_into_buffer(self) != 0) {
+                    return NULL;
+                }
+                continue;
             }
-            continue;
         }
-
         qualities_start = second_header_end + 1;
         qualities_end = memchr(qualities_start, '\n', (buffer_end - qualities_start));
         if (qualities_end == NULL) {
