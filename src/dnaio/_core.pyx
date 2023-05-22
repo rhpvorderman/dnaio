@@ -532,8 +532,6 @@ cdef class FastqIter:
         return self
 
     def __next__(self):
-        if self.eof:
-            raise StopIteration()
         cdef:
             object ret_val
             SequenceRecord seq_record
@@ -552,6 +550,8 @@ cdef class FastqIter:
         while self.newline_pos + 4 > self.newlines_in_index:
             # Buffer may need multiple resizings before fitting an entire record
             self._read_into_buffer()
+            if self.eof:
+                raise StopIteration()
         cdef size_t newline_pos = self.newline_pos
         cdef char **newline_index = self.newline_index
         record_start = self.record_start
