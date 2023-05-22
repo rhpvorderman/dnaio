@@ -399,6 +399,10 @@ cdef class FastqIter:
         Py_ssize_t buffer_size
         char *buffer
         Py_ssize_t bytes_in_buffer
+        char **newline_index
+        size_t newline_index_size
+        size_t newlines_in_index
+        size_t newline_pos
         type sequence_class
         bint use_custom_class
         bint extra_newline
@@ -413,6 +417,10 @@ cdef class FastqIter:
         self.buffer = <char *>PyMem_Malloc(self.buffer_size)
         if self.buffer == NULL:
             raise MemoryError()
+        self.newline_index = NULL
+        self.newline_index_size = 0
+        self.newlines_in_index = 0
+        self.newline_pos = 0
         self.bytes_in_buffer = 0
         self.sequence_class = sequence_class
         self.use_custom_class = sequence_class is not SequenceRecord
@@ -427,6 +435,31 @@ cdef class FastqIter:
 
     def __dealloc__(self):
         PyMem_Free(self.buffer)
+
+    cdef _index_newlines(self, char *buffer, size_t buffersize):
+        cdef:
+            char **newline_index = self.newline_index
+            char **tmp
+            size_t newline_index_size = self.newline_index_size
+            size_t newlines_in_index = 0
+            char *end_ptr = buffer+buffersize
+            char *cursor = buffer
+        while True:
+            cursor = <char *>memchr(cursor, b"\n", end_ptr - cursor)
+            if (cursor == NULL):
+                break
+            newlines_in_index += 1
+            if newlines_in_index > newline_index_size:
+                tmp = <char **>PyMem_Realloc(newline_index, sizeof(char *) * newlines_in_index)
+                newline_index_size = newlines_in_index
+                if tmp == NULL:
+                    raise MemoryError()
+                newline_index = tmp
+            newline_index[newlines_in_index - 1] = cursor
+        self.newline_index = newline_index
+        self.newline_index_size = newline_index_size
+        self.newlines_in_index = newlines_in_index
+        self.newline_pos = 0
 
     cdef _read_into_buffer(self):
         # This function sets self.record_start at 0 and makes sure self.buffer
