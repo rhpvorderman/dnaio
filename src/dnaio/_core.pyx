@@ -504,8 +504,6 @@ cdef class FastqIter:
                 "Non-ASCII characters found in record.", None)
         self.bytes_in_buffer += filechunk_size
 
-        self._index_newlines()
-
         if filechunk_size == 0:  # End of file
             if self.bytes_in_buffer == 0:  # EOF Reached. Stop iterating.
                 self.eof = True
@@ -550,6 +548,7 @@ cdef class FastqIter:
         while self.newline_pos + 4 > self.newlines_in_index:
             # Buffer may need multiple resizings before fitting an entire record
             self._read_into_buffer()
+            self._index_newlines()
             if self.eof:
                 raise StopIteration()
         cdef size_t newline_pos = self.newline_pos
