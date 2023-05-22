@@ -457,6 +457,7 @@ cdef class FastqIter:
                     raise MemoryError()
                 newline_index = tmp
             newline_index[newlines_in_index - 1] = cursor
+            cursor += 1  # Jump over the newline
         self.newline_index = newline_index
         self.newline_index_size = newline_index_size
         self.newlines_in_index = newlines_in_index
