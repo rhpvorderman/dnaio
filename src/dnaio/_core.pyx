@@ -375,6 +375,20 @@ def paired_fastq_heads(buf1, buf2, Py_ssize_t end1, Py_ssize_t end2):
     return record_start1 - data1, record_start2 - data2
 
 
+cdef inline size_t count_newlines(char *text, size_t text_size):
+    cdef:
+        char *cursor = text
+        char *end_ptr = text + text_size
+        size_t count = 0
+
+    while True:
+        cursor = <char *>memchr(cursor, b"\n", end_ptr - cursor)
+        if cursor == NULL:
+            return count
+        count += 1
+        cursor += 1  # Hop over newline
+
+
 cdef class FastqIter:
     """
     Parse a FASTQ file and yield SequenceRecord objects
@@ -406,6 +420,7 @@ cdef class FastqIter:
         bint eof
         object file
         char *record_start
+        size_t remaining_records_in_buffer
     cdef readonly Py_ssize_t number_of_records
 
     def __cinit__(self, file, sequence_class, Py_ssize_t buffer_size):
@@ -422,6 +437,7 @@ cdef class FastqIter:
         self.eof = False
         self.record_start = self.buffer
         self.file = file
+        self.remaining_records_in_buffer = 0
         if buffer_size < 1:
             raise ValueError("Starting buffer size too small")
 
@@ -511,111 +527,97 @@ cdef class FastqIter:
             Py_ssize_t name_length, sequence_length, second_header_length, qualities_length
         # Repeatedly attempt to parse the buffer until we have found a full record.
         # If an attempt fails, we read more data before retrying.
-        while True:
-            buffer_end = self.buffer + self.bytes_in_buffer
+        while self.remaining_records_in_buffer == 0:
+            self._read_into_buffer()
             if self.eof:
                 raise StopIteration()
-            ### Check for a complete record (i.e 4 newlines are present)
-            # Use libc memchr, this optimizes looking for characters by
-            # using 64-bit integers. See:
-            # https://sourceware.org/git/?p=glibc.git;a=blob_plain;f=string/memchr.c;hb=HEAD
-            # void *memchr(const void *str, int c, size_t n)
-            name_end = <char *>memchr(self.record_start, b'\n', <size_t>(buffer_end - self.record_start))
-            if name_end == NULL:
-                self._read_into_buffer()
-                continue
-            # self.bytes_in_buffer - sequence_start is always nonnegative:
-            # - name_end is at most self.bytes_in_buffer - 1
-            # - thus sequence_start is at most self.bytes_in_buffer
-            sequence_start = name_end + 1
-            sequence_end = <char *>memchr(sequence_start, b'\n', <size_t>(buffer_end - sequence_start))
-            if sequence_end == NULL:
-                self._read_into_buffer()
-                continue
-            second_header_start = sequence_end + 1
-            remaining_bytes = (buffer_end - second_header_start)
-            # Usually there is no second header, so we skip the memchr call.
-            if remaining_bytes > 2 and second_header_start[0] == b'+' and second_header_start[1] == b'\n':
-                second_header_end = second_header_start + 1
-            else:
-                second_header_end = <char *>memchr(second_header_start, b'\n', <size_t>(remaining_bytes))
-                if second_header_end == NULL:
-                    self._read_into_buffer()
-                    continue
-            qualities_start = second_header_end + 1
-            qualities_end = <char *>memchr(qualities_start, b'\n', <size_t>(buffer_end - qualities_start))
-            if qualities_end == NULL:
-                self._read_into_buffer()
-                continue
+            self.remaining_records_in_buffer = count_newlines(self.buffer, self.bytes_in_buffer) // 4
 
-            if self.record_start[0] != b'@':
-                raise FastqFormatError("Line expected to "
-                    "start with '@', but found {!r}".format(chr(self.record_start[0])),
-                    line=self.number_of_records * 4)
-            if second_header_start[0] != b'+':
-                raise FastqFormatError("Line expected to "
-                    "start with '+', but found {!r}".format(chr(second_header_start[0])),
+        buffer_end = self.buffer + self.bytes_in_buffer
+
+        # Use libc memchr for finding newlines, this uses assembly versions
+        # specific to a cpu using dynamic dispatch.
+        name_end = <char *>memchr(self.record_start, b'\n', <size_t>(buffer_end - self.record_start))
+        sequence_start = name_end + 1
+        sequence_end = <char *>memchr(sequence_start, b'\n', <size_t>(buffer_end - sequence_start))
+        second_header_start = sequence_end + 1
+        remaining_bytes = (buffer_end - second_header_start)
+        if remaining_bytes > 2 and second_header_start[0] == b'+' and second_header_start[1] == b'\n':
+            second_header_end = second_header_start + 1
+        else:
+            second_header_end = <char *>memchr(second_header_start, b'\n', <size_t>(remaining_bytes))
+        qualities_start = second_header_end + 1
+        qualities_end = <char *>memchr(qualities_start, b'\n', <size_t>(buffer_end - qualities_start))
+
+        if self.record_start[0] != b'@':
+            raise FastqFormatError("Line expected to "
+                "start with '@', but found {!r}".format(chr(self.record_start[0])),
+                line=self.number_of_records * 4)
+        if second_header_start[0] != b'+':
+            raise FastqFormatError("Line expected to "
+                "start with '+', but found {!r}".format(chr(second_header_start[0])),
+                line=self.number_of_records * 4 + 2)
+
+        name_start = self.record_start + 1  # Skip @
+        second_header_start += 1  # Skip +
+        name_length = name_end - name_start
+        sequence_length = sequence_end - sequence_start
+        second_header_length = second_header_end - second_header_start
+        qualities_length = qualities_end - qualities_start
+
+        # Check for \r\n line-endings and compensate
+        if (name_end - 1)[0] == b'\r':
+            name_length -= 1
+        if (sequence_end - 1)[0] == b'\r':
+            sequence_length -= 1
+        if (second_header_end - 1)[0] == b'\r':
+            second_header_length -= 1
+        if (qualities_end - 1)[0] == b'\r':
+            qualities_length -= 1
+
+        if second_header_length:  # should be 0 when only + is present
+            if (name_length != second_header_length or
+                    memcmp(second_header_start, name_start, second_header_length) != 0):
+                raise FastqFormatError(
+                    "Sequence descriptions don't match ('{}' != '{}').\n"
+                    "The second sequence description must be either "
+                    "empty or equal to the first description.".format(
+                        PyUnicode_DecodeASCII(name_start, name_length, NULL),
+                        PyUnicode_DecodeASCII(second_header_start, second_header_length, NULL)),
                     line=self.number_of_records * 4 + 2)
 
-            name_start = self.record_start + 1  # Skip @
-            second_header_start += 1  # Skip +
-            name_length = name_end - name_start
-            sequence_length = sequence_end - sequence_start
-            second_header_length = second_header_end - second_header_start
-            qualities_length = qualities_end - qualities_start
+        if qualities_length != sequence_length:
+            raise FastqFormatError(
+                "Length of sequence and qualities differ", line=self.number_of_records * 4 + 3)
 
-            # Check for \r\n line-endings and compensate
-            if (name_end - 1)[0] == b'\r':
-                name_length -= 1
-            if (sequence_end - 1)[0] == b'\r':
-                sequence_length -= 1
-            if (second_header_end - 1)[0] == b'\r':
-                second_header_length -= 1
-            if (qualities_end - 1)[0] == b'\r':
-                qualities_length -= 1
+        if self.number_of_records == 0 and not self.yielded_two_headers:
+            self.yielded_two_headers = True
+            return bool(second_header_length)  # first yielded value is special
 
-            if second_header_length:  # should be 0 when only + is present
-                if (name_length != second_header_length or
-                        memcmp(second_header_start, name_start, second_header_length) != 0):
-                    raise FastqFormatError(
-                        "Sequence descriptions don't match ('{}' != '{}').\n"
-                        "The second sequence description must be either "
-                        "empty or equal to the first description.".format(
-                            PyUnicode_DecodeASCII(name_start, name_length, NULL),
-                            PyUnicode_DecodeASCII(second_header_start, second_header_length, NULL)),
-                        line=self.number_of_records * 4 + 2)
+        # Constructing objects with PyUnicode_New and memcpy bypasses some of
+        # the checks otherwise done when using PyUnicode_DecodeLatin1 or similar
+        name = PyUnicode_New(name_length, 127)
+        sequence = PyUnicode_New(sequence_length, 127)
+        qualities = PyUnicode_New(qualities_length, 127)
+        if <PyObject*>name == NULL or <PyObject*>sequence == NULL or <PyObject*>qualities == NULL:
+            raise MemoryError()
+        memcpy(PyUnicode_DATA(name), name_start, name_length)
+        memcpy(PyUnicode_DATA(sequence), sequence_start, sequence_length)
+        memcpy(PyUnicode_DATA(qualities), qualities_start, qualities_length)
 
-            if qualities_length != sequence_length:
-                raise FastqFormatError(
-                    "Length of sequence and qualities differ", line=self.number_of_records * 4 + 3)
-
-            if self.number_of_records == 0 and not self.yielded_two_headers:
-                self.yielded_two_headers = True
-                return bool(second_header_length)  # first yielded value is special
-
-            # Constructing objects with PyUnicode_New and memcpy bypasses some of
-            # the checks otherwise done when using PyUnicode_DecodeLatin1 or similar
-            name = PyUnicode_New(name_length, 127)
-            sequence = PyUnicode_New(sequence_length, 127)
-            qualities = PyUnicode_New(qualities_length, 127)
-            if <PyObject*>name == NULL or <PyObject*>sequence == NULL or <PyObject*>qualities == NULL:
-                raise MemoryError()
-            memcpy(PyUnicode_DATA(name), name_start, name_length)
-            memcpy(PyUnicode_DATA(sequence), sequence_start, sequence_length)
-            memcpy(PyUnicode_DATA(qualities), qualities_start, qualities_length)
-
-            if self.use_custom_class:
-                ret_val = self.sequence_class(name, sequence, qualities)
-            else:
-                seq_record = SequenceRecord.__new__(SequenceRecord)
-                seq_record._name = name
-                seq_record._sequence = sequence
-                seq_record._qualities = qualities
-                ret_val = seq_record
-            # Advance record to next position
-            self.number_of_records += 1
-            self.record_start = qualities_end + 1
-            return ret_val
+        if self.use_custom_class:
+            ret_val = self.sequence_class(name, sequence, qualities)
+        else:
+            seq_record = SequenceRecord.__new__(SequenceRecord)
+            seq_record._name = name
+            seq_record._sequence = sequence
+            seq_record._qualities = qualities
+            ret_val = seq_record
+        # Advance record to next position
+        self.number_of_records += 1
+        self.record_start = qualities_end + 1
+        self.remaining_records_in_buffer -= 1
+        return ret_val
 
 
 def record_names_match(header1: str, header2: str):
