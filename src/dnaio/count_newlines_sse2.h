@@ -3,6 +3,7 @@
 size_t count_newlines(const char *text, size_t text_size) {
     const char *cursor = text;
     const char *end_ptr = text + text_size;
+    size_t count = 0;
     // Align cursor to __m128i boundary
     while ((cursor < end_ptr) && ((size_t)cursor % sizeof(__m128i))) {
         if (*cursor == '\n') {
