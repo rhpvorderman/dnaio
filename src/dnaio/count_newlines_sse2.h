@@ -1,15 +1,15 @@
 #include "emmintrin.h"
 #include <stdint.h>
 size_t count_newlines(const char *text, size_t text_size) {
-    size_t count = 0;
-    size_t bytes_to_align = (size_t)text % sizeof(__m128i);
-    for (size_t i=0; i < bytes_to_align; i++) {
-        if (text[i] == '\n') {
+    const char *cursor = text;
+    const char *end_ptr = text + text_size;
+    // Align cursor to __m128i boundary
+    while ((cursor < end_ptr) && ((size_t)cursor % sizeof(__m128i))) {
+        if (*cursor == '\n') {
             count += 1;
         }
+        cursor += 1;
     }
-    const char *cursor = text + bytes_to_align;
-    const char *end_ptr = text + text_size;
     __m128i newlines = _mm_set1_epi8('\n');
     while (cursor < (end_ptr - sizeof(__m128i))) {
         size_t chunks_remaining = (end_ptr - cursor) / sizeof(__m128i);
