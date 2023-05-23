@@ -511,20 +511,6 @@ cdef class FastqIter:
         return self
 
     def __next__(self):
-        cdef:
-            object ret_val
-            SequenceRecord seq_record
-            char *name_start
-            char *name_end
-            char *sequence_start
-            char *sequence_end
-            char *second_header_start
-            char *second_header_end
-            char *qualities_start
-            char *qualities_end
-            char *buffer_end
-            size_t remaining_bytes
-            Py_ssize_t name_length, sequence_length, second_header_length, qualities_length
         # Repeatedly attempt to parse the buffer until we have found a full record.
         # If an attempt fails, we read more data before retrying.
         while self.remaining_records_in_buffer == 0:
@@ -533,21 +519,21 @@ cdef class FastqIter:
                 raise StopIteration()
             self.remaining_records_in_buffer = count_newlines(self.buffer, self.bytes_in_buffer) // 4
 
-        buffer_end = self.buffer + self.bytes_in_buffer
+        cdef char *buffer_end = self.buffer + self.bytes_in_buffer
 
         # Use libc memchr for finding newlines, this uses assembly versions
         # specific to a cpu using dynamic dispatch.
-        name_end = <char *>memchr(self.record_start, b'\n', <size_t>(buffer_end - self.record_start))
-        sequence_start = name_end + 1
-        sequence_end = <char *>memchr(sequence_start, b'\n', <size_t>(buffer_end - sequence_start))
-        second_header_start = sequence_end + 1
-        remaining_bytes = (buffer_end - second_header_start)
-        if remaining_bytes > 2 and second_header_start[0] == b'+' and second_header_start[1] == b'\n':
+        cdef char *name_end = <char *>memchr(self.record_start, b'\n', <size_t>(buffer_end - self.record_start))
+        cdef char *sequence_start = name_end + 1
+        cdef char *sequence_end = <char *>memchr(sequence_start, b'\n', <size_t>(buffer_end - sequence_start))
+        cdef char *second_header_start = sequence_end + 1
+        cdef char *second_header_end
+        if second_header_start[1] == b"\n":
             second_header_end = second_header_start + 1
         else:
-            second_header_end = <char *>memchr(second_header_start, b'\n', <size_t>(remaining_bytes))
-        qualities_start = second_header_end + 1
-        qualities_end = <char *>memchr(qualities_start, b'\n', <size_t>(buffer_end - qualities_start))
+            second_header_end = <char *>memchr(second_header_start, b'\n', <size_t>(buffer_end - second_header_start))
+        cdef char *qualities_start = second_header_end + 1
+        cdef char *qualities_end = <char *>memchr(qualities_start, b'\n', <size_t>(buffer_end - qualities_start))
 
         if self.record_start[0] != b'@':
             raise FastqFormatError("Line expected to "
@@ -558,12 +544,12 @@ cdef class FastqIter:
                 "start with '+', but found {!r}".format(chr(second_header_start[0])),
                 line=self.number_of_records * 4 + 2)
 
-        name_start = self.record_start + 1  # Skip @
+        cdef char *name_start = self.record_start + 1  # Skip @
         second_header_start += 1  # Skip +
-        name_length = name_end - name_start
-        sequence_length = sequence_end - sequence_start
-        second_header_length = second_header_end - second_header_start
-        qualities_length = qualities_end - qualities_start
+        cdef Py_ssize_t name_length = name_end - name_start
+        cdef Py_ssize_t sequence_length = sequence_end - sequence_start
+        cdef Py_ssize_t second_header_length = second_header_end - second_header_start
+        cdef Py_ssize_t qualities_length = qualities_end - qualities_start
 
         # Check for \r\n line-endings and compensate
         if (name_end - 1)[0] == b'\r':
@@ -604,6 +590,10 @@ cdef class FastqIter:
         memcpy(PyUnicode_DATA(name), name_start, name_length)
         memcpy(PyUnicode_DATA(sequence), sequence_start, sequence_length)
         memcpy(PyUnicode_DATA(qualities), qualities_start, qualities_length)
+
+        cdef:
+            object ret_val
+            SequenceRecord seq_record
 
         if self.use_custom_class:
             ret_val = self.sequence_class(name, sequence, qualities)
