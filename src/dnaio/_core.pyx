@@ -19,11 +19,14 @@ cdef extern from *:
     """
     #if defined(USE_SSE2)
       #include "ascii_check_sse2.h"
+    #include "count_newlines_sse2.h"
     #else
       #include "ascii_check.h"
+      #include "count_newlines.h"
     #endif
     """
     int string_is_ascii(char *string, size_t length)
+    size_t count_newlines(char *text, size_t text_size)
 
 cdef extern from "_conversions.h":
     const char NUCLEOTIDE_COMPLEMENTS[256]
@@ -373,20 +376,6 @@ def paired_fastq_heads(buf1, buf2, Py_ssize_t end1, Py_ssize_t end2):
     PyBuffer_Release(&data1_buffer)
     PyBuffer_Release(&data2_buffer)
     return record_start1 - data1, record_start2 - data2
-
-
-cdef inline size_t count_newlines(char *text, size_t text_size):
-    cdef:
-        char *cursor = text
-        char *end_ptr = text + text_size
-        size_t count = 0
-
-    while True:
-        cursor = <char *>memchr(cursor, b"\n", end_ptr - cursor)
-        if cursor == NULL:
-            return count
-        count += 1
-        cursor += 1  # Hop over newline
 
 
 cdef class FastqIter:
