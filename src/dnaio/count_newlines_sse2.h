@@ -2,7 +2,7 @@
 #include <stdint.h>
 size_t count_newlines(const char *text, size_t text_size) {
     size_t count = 0;
-    size_t bytes_to_align = (size_t)text / sizeof(__m128i);
+    size_t bytes_to_align = (size_t)text % sizeof(__m128i);
     for (size_t i=0; i < bytes_to_align; i++) {
         if (text[i] == '\n') {
             count += 1;
