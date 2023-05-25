@@ -12,28 +12,42 @@ size_t count_newlines(const char *text, size_t text_size) {
         }
         cursor += 1;
     }
+    __m128i int64x2_accumulator = _mm_setzero_si128();
     while (cursor < (end_ptr - sizeof(__m128i))) {
+        /* Use a vector of 16 uint8 integers to count newlines. This makes it
+           easy to accumulate the result of _mm_cmp_eq_epi8 which also reports 
+           it results as 8-bit integers. 
+           Only 255 vectors can be counted this way. If more are counted one of 
+           the  accumulators might get saturated and the total count will be 
+           incorrect. 
+           The outer loop ensures it keeps running until all 255x16 chunks are 
+           counted.
+           */
+        __m128i uint8x16_accumulator = _mm_setzero_si128();
         size_t chunks_remaining = (end_ptr - cursor) / sizeof(__m128i);
         if (chunks_remaining > UINT8_MAX) {
-            // This is the maximum that we can accumalate using the method below
             chunks_remaining = UINT8_MAX;
         }
-        __m128i accumulator = _mm_setzero_si128();
         for (size_t i=0; i<chunks_remaining; i++) {
-            __m128i data = _mm_load_si128((__m128i *)cursor);
-            __m128i eq = _mm_cmpeq_epi8(data, _mm_set1_epi8('\n'));
+            __m128i uint8x16_data = _mm_load_si128((__m128i *)cursor);
+            __m128i uint8x16_eq = _mm_cmpeq_epi8(uint8x16_data, _mm_set1_epi8('\n'));
             // cmp_eq sets all bits if a newline is found.
             // convert this to a one. 255 - 254 = 1
-            __m128i ones = _mm_subs_epu8(eq, _mm_set1_epi8(254));
-            accumulator = _mm_adds_epu8(accumulator, ones);
+            __m128i uint8x16_ones = _mm_subs_epu8(uint8x16_eq, _mm_set1_epi8(254));
+            uint8x16_accumulator = _mm_adds_epu8(uint8x16_accumulator, uint8x16_ones);
             cursor += sizeof(__m128i);
         }
-        static uint8_t accumulated_counts[sizeof(__m128i)];
-        _mm_storeu_si128((__m128i *)&accumulated_counts, accumulator);
-        for (size_t i=0; i < sizeof(__m128i); i++) {
-            count += accumulated_counts[i];
-        }
+        // Use _mm_sad_epu8 to perform a horizontal addition of all uint8 
+        // numbers in the accumulator and store them as 2 16-bit integers in 
+        // a vector.
+        __m128i int16x8_sums = _mm_sad_epu8(uint8x16_accumulator, _mm_setzero_si128());
+        // Because only slots 0 and 4 are filled in the in16x8sums vector it
+        // is also a defacto int64x2 vector (as all the other slots are 0).
+        int64x2_accumulator = _mm_add_epi64(int64x2_accumulator, int16x8_sums);
     }
+    count += _mm_cvtsi128_si64(int64x2_accumulator);
+    __m128i slot_one_to_slot_zero = _mm_unpackhi_epi64(int64x2_accumulator, _mm_setzero_si128());
+    count += _mm_cvtsi128_si64(slot_one_to_slot_zero);
     while (cursor < end_ptr) {
         if (*cursor == '\n') {
             count += 1;
