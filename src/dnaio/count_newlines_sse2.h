@@ -36,6 +36,11 @@ size_t count_newlines(const char *text, size_t text_size) {
             uint8x16_accumulator = _mm_adds_epu8(uint8x16_accumulator, uint8x16_ones);
             cursor += sizeof(__m128i);
         }
+        /* In theory it can be faster to use the _mm_sad_epu8 instruction to
+           perform the horizontal count, but this uses extra SSE registers and
+           there is only a limited number available. The code below keeps the
+           number of used registers smaller and uses static preallocated memory
+           to prevent paying for a memory allocation. */
         static uint8_t accumulated_counts[sizeof(__m128i)];
         _mm_storeu_si128((__m128i *)&accumulated_counts, uint8x16_accumulator);
         for (size_t i=0; i < sizeof(__m128i); i++) {
