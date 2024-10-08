@@ -6,6 +6,7 @@ from cpython.mem cimport PyMem_Free, PyMem_Malloc, PyMem_Realloc
 from cpython.unicode cimport PyUnicode_CheckExact, PyUnicode_GET_LENGTH, PyUnicode_DecodeASCII
 from cpython.object cimport Py_TYPE, PyTypeObject
 from cpython.ref cimport PyObject
+from cpython.slice cimport PySlice_GetIndicesEx
 from cpython.tuple cimport PyTuple_GET_ITEM
 from libc.string cimport memcmp, memcpy, memchr, strcspn, strspn, memmove
 from libc.stdint cimport uint8_t, uint16_t, uint32_t, int8_t, int16_t, int32_t
@@ -57,6 +58,16 @@ def is_not_ascii_message(field, value):
             f", but found '{value[e.start:e.end]}' at index {e.start}"
         )
     return f"'{field}' in sequence file must be ASCII encoded{detail}"
+
+
+cdef inline slice_tags(bytes tags, Py_ssize_t original_size, slice_obj):
+    cdef:
+        uint8_t *tag_start = <uint8_t *>PyBytes_AS_STRING(tags)  # Throws an error when not bytes
+        Py_ssize_t length = PyBytes_GET_SIZE(tags)
+        Py_ssize_t start
+        Py_ssize_t stop
+        Py_ssize_t step
+
 
 
 cdef class SequenceRecord:
@@ -219,6 +230,7 @@ cdef class SequenceRecord:
             self._name,
             self._sequence[key],
             self._qualities[key] if self._qualities is not None else None,
+            slice_tags(self._tags, key) if self._tags is not None else None,
         )
 
     def __repr__(self):
